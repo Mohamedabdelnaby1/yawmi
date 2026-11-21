@@ -289,6 +289,8 @@ List<JournalRow> restoreWidgetDesigns(JournalRow state, Object? raw) {
             'clockLanguage': item['clockLanguage'],
           if (['ar', 'en'].contains(item['timeLanguage']))
             'timeLanguage': item['timeLanguage'],
+          if (['ar', 'en'].contains(item['widgetLanguage']))
+            'widgetLanguage': item['widgetLanguage'],
           if (['off', 'suggest', 'auto'].contains(item['layoutLearning']))
             'layoutLearning': item['layoutLearning'],
           if (item['opacity'] case final num opacity when opacity.isFinite)
@@ -365,12 +367,17 @@ class WidgetScene {
   WidgetScene.responsive(
     this.state,
     this.config,
-    this.ar,
+    bool appArabic,
     this.viewport, {
     this.demo = false,
     this.systemDark = false,
     DateTime? today,
-  }) : now = today ?? DateTime.now();
+  }) : ar = switch (config['widgetLanguage']) {
+         'en' => false,
+         'ar' => true,
+         _ => appArabic,
+       },
+       now = today ?? DateTime.now();
 
   final JournalRow state, config;
   final bool ar, demo, systemDark;
@@ -1378,11 +1385,12 @@ JournalRow widgetSnapshot(JournalRow state, bool ar, DateTime moment) {
     if (index > 0 && id == automaticWidgetId) continue;
     published[id] = {
       'name': id == automaticWidgetId
-          ? tr(ar, 'بطاقات اليوم', 'Today’s cards')
+          ? tr(scene.ar, 'بطاقات اليوم', 'Today’s cards')
           : name.isEmpty
-          ? '${tr(ar, 'تركيبة', 'Layout')} $index'
+          ? '${tr(scene.ar, 'تركيبة', 'Layout')} $index'
           : name,
-      'heading': name.isEmpty ? tr(ar, 'يومي', 'Yawmi') : name,
+      'heading': name.isEmpty ? tr(scene.ar, 'يومي', 'Yawmi') : name,
+      'ar': scene.ar,
       if (scene.shortcut case final shortcut?)
         'shortcut': {'label': shortcut.label, 'route': shortcut.route},
       'accent': scene.accent.toARGB32(),

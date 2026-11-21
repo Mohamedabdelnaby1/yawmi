@@ -1531,6 +1531,19 @@ extension _Studio on _HomeState {
                     value: draft['showShortcut'] != false,
                     onChanged: (on) => redraw(() => draft['showShortcut'] = on),
                   ),
+                  const SizedBox(height: 8),
+                  _choiceSetting(
+                    c,
+                    t('لغة الويدجت', 'Widget language'),
+                    draft['widgetLanguage'] ?? 'app',
+                    [
+                      ('app', t('لغة يومي', 'Yawmi language')),
+                      ('ar', 'العربية'),
+                      ('en', 'English'),
+                    ],
+                    (value) => redraw(() => draft['widgetLanguage'] = value),
+                    icon: Icons.language_rounded,
+                  ),
                   if (draft['clock'] == true) ...[
                     const SizedBox(height: 8),
                     _choiceSetting(
@@ -1568,7 +1581,7 @@ extension _Studio on _HomeState {
                         t('لغة التاريخ', 'Date language'),
                         scene.clockLanguage,
                         [
-                          ('app', t('لغة يومي', 'Yawmi language')),
+                          ('app', t('لغة الويدجت', 'Widget language')),
                           ('ar', 'العربية'),
                           ('en', 'English'),
                         ],

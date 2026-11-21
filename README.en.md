@@ -58,7 +58,7 @@ Requires Android 8 or later. Android may ask for permission to install the APK f
 2. **Today and History.** Use the add button or open a tracker card to log a reading. Pick a past date, compare periods, or open your glucose settings to change the rolling average and units.
 3. **Routine.** Set dose times and meal timing. Open the medicine cabinet for stock and expiry, or Upcoming follow-ups to plan a lab retest, visit, or custom reminder.
 4. **Reminders.** Open the bell on Today to manage measurement, medication, and hydration alerts. Set hours of quiet, test Android delivery, or review adaptive routine suggestions in Routine.
-5. **Widgets.** In Widget Studio, choose what to show and the number of columns. In Appearance, select English or Arabic clock digits, an independent date language, and 12- or 24-hour time. Privacy controls what shows on your home screen.
+5. **Widgets.** In Widget Studio, open an installed widget and choose Appearance. Set the widget language, clock digits, date language, and 12- or 24-hour format. Save to apply your choices on the home screen. Privacy controls what data appears there.
 6. **Data.** Export a CSV or PDF, or save a password-protected backup. The import center restores a Yawmi backup or lets you preview CSV readings before adding them.
 
 ### In-app updates

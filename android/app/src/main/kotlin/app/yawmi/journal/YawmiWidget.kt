@@ -10,10 +10,13 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
+import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.text.format.DateFormat
 import android.util.Log
+import android.util.LruCache
 import android.util.SizeF
 import android.util.TypedValue
 import android.view.View
@@ -43,21 +46,31 @@ internal fun appShortcut(context: Context, route: String, key: String): PendingI
 open class YawmiWidget : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
         ids.forEach { update(context, manager, it) }
+        WidgetClockUpdates.sync(context, hasClocks(context))
     }
 
     override fun onAppWidgetOptionsChanged(context: Context, manager: AppWidgetManager, id: Int, newOptions: Bundle) {
         update(context, manager, id, newOptions)
+        WidgetClockUpdates.sync(context, hasClocks(context))
     }
 
     override fun onDeleted(context: Context, ids: IntArray) {
         val edit = store(context).edit()
         ids.forEach { edit.remove(it.toString()) }
         edit.apply()
+        WidgetClockUpdates.sync(context, hasClocks(context))
     }
 
     companion object {
         private const val automatic = "today"
         private const val snapshotKey = "snapshot_v2"
+        private data class ArtworkKey(
+            val layout: String, val size: SizeF, val ar: Boolean, val dark: Boolean,
+            val density: Float, val date: java.time.LocalDate,
+        )
+        private val artwork = object : LruCache<ArtworkKey, Bitmap>(12 * 1024 * 1024) {
+            override fun sizeOf(key: ArtworkKey, value: Bitmap) = value.allocationByteCount
+        }
         private val providers = listOf(
             YawmiWidget::class.java, YawmiStripWidget::class.java, YawmiTowerWidget::class.java,
             YawmiBoardWidget::class.java, YawmiSquareWidget::class.java, YawmiMatrixWidget::class.java,
@@ -91,6 +104,24 @@ open class YawmiWidget : AppWidgetProvider() {
                     update(context, manager, it)
                 }
             }
+            WidgetClockUpdates.sync(context, hasClocks(context))
+        }
+
+        private fun clockWidgets(context: Context): List<Int> {
+            val state = snapshot(context)
+            val layouts = state.optJSONObject("layouts") ?: return emptyList()
+            return installedIds(context).filter { id ->
+                layouts.optJSONObject(resolve(context, id, state, layouts))?.optBoolean("clock") == true
+            }
+        }
+
+        fun hasClocks(context: Context) = clockWidgets(context).isNotEmpty()
+
+        fun refreshClocks(context: Context): Boolean {
+            val ids = clockWidgets(context)
+            val manager = AppWidgetManager.getInstance(context)
+            ids.forEach { update(context, manager, it) }
+            return ids.isNotEmpty()
         }
 
         fun activeLayout(context: Context, id: Int): Map<String, Any>? {
@@ -151,6 +182,7 @@ open class YawmiWidget : AppWidgetProvider() {
                     if (id == widgetId) targetSucceeded = done
                 }
             }
+            WidgetClockUpdates.sync(context, hasClocks(context))
             check(if (widgetId == null) allSucceeded else targetSucceeded)
         }
 
@@ -160,7 +192,9 @@ open class YawmiWidget : AppWidgetProvider() {
             val layouts = snapshot(context).optJSONObject("layouts")
             if (key != automatic && layouts?.has(key) != true) return false
             if (!store(context).edit().putString(id.toString(), key).commit()) return false
-            return update(context, manager, id)
+            return update(context, manager, id).also {
+                WidgetClockUpdates.sync(context, hasClocks(context))
+            }
         }
 
         fun configure(activity: Activity, id: Int) {
@@ -191,6 +225,7 @@ open class YawmiWidget : AppWidgetProvider() {
         private fun arabic(context: Context, state: JSONObject): Boolean =
             state.optBoolean("ar", context.resources.configuration.locales[0].language == "ar")
 
+        @Synchronized
         private fun update(
             context: Context,
             manager: AppWidgetManager,
@@ -202,10 +237,12 @@ open class YawmiWidget : AppWidgetProvider() {
 
         private fun draw(context: Context, manager: AppWidgetManager, id: Int, options: Bundle) {
             val state = snapshot(context)
-            val ar = arabic(context, state)
+            val defaultArabic = arabic(context, state)
             val layouts = state.optJSONObject("layouts")
             val stored = layouts?.optJSONObject(resolve(context, id, state, layouts))
-            val layout = stored?.let { currentLayout(it, state, ar, ZonedDateTime.now()) }
+            val ar = stored?.optBoolean("ar", defaultArabic) ?: defaultArabic
+            val now = ZonedDateTime.now()
+            val layout = stored?.let { currentLayout(it, state, ar, now) }
             val density = context.resources.displayMetrics.density.coerceAtLeast(1f)
             val info = manager.getAppWidgetInfo(id)
             val w = (info?.minWidth?.div(density) ?: 170f).roundToInt()
@@ -215,7 +252,7 @@ open class YawmiWidget : AppWidgetProvider() {
                 dp(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, h))
             val landscape = SizeF(dp(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, w),
                 dp(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, h))
-            fun at(size: SizeF) = art(context, id, layout, size, ar)
+            fun at(size: SizeF) = art(context, id, layout, size, ar, now)
             if (Build.VERSION.SDK_INT >= 31) {
                 val sizes = reportedSizes(options)
                 if (sizes.isNotEmpty()) {
@@ -269,7 +306,9 @@ open class YawmiWidget : AppWidgetProvider() {
             return JSONObject(layout.toString()).put("cards", updated)
         }
 
-        private fun art(context: Context, id: Int, layout: JSONObject?, size: SizeF, ar: Boolean): RemoteViews {
+        private fun art(
+            context: Context, id: Int, layout: JSONObject?, size: SizeF, ar: Boolean, now: ZonedDateTime,
+        ): RemoteViews {
             val views = RemoteViews(context.packageName, R.layout.yawmi_widget)
             val studio = "studio/$id"
             val launcherDark = (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
@@ -297,28 +336,28 @@ open class YawmiWidget : AppWidgetProvider() {
             val density = context.resources.displayMetrics.density
             fun px(dp: Float) = (dp * density).roundToInt().coerceAtLeast(0)
             if (clock) {
-                val arabicTime = space.layout.optString("timeLanguage", "en") == "ar"
-                val time = if (arabicTime) R.id.widget_clock_arabic else R.id.widget_clock_time
-                views.setViewVisibility(R.id.widget_clock_arabic, if (arabicTime) View.VISIBLE else View.GONE)
-                views.setViewVisibility(R.id.widget_clock_time, if (arabicTime) View.GONE else View.VISIBLE)
+                val time = R.id.widget_clock_time
                 val color = if (dark) 0xfff7f6ee.toInt() else 0xff152944.toInt()
-                val format = space.layout.optString("clockFormat", "system")
-                views.setCharSequence(time, "setFormat12Hour", if (format == "24") "HH:mm" else "h:mm")
-                views.setCharSequence(time, "setFormat24Hour", if (format == "12") "h:mm" else "HH:mm")
+                val text = widgetClockText(now.toLocalTime(), space.layout.optString("timeLanguage", "en"),
+                    space.layout.optString("clockFormat", "system"), DateFormat.is24HourFormat(context))
+                views.setTextViewText(time, text)
                 views.setTextColor(time, color)
                 views.setTextViewTextSize(time, TypedValue.COMPLEX_UNIT_DIP, space.clockSize)
                 val frame = space.clockFrame(ar).time
                 views.setViewPadding(R.id.widget_clock_strip, px(frame.left + 3),
                     px(frame.centerY() - space.clockSize * .57f), px(space.width - frame.right + 3), 0)
                 if (space.clockDate) {
-                    val date = widgetDate(space, ar)
-                    views.setContentDescription(R.id.widget_clock_strip, "${date.weekday} ${date.line}")
+                    val date = widgetDate(space, ar, now.toLocalDate())
+                    views.setContentDescription(R.id.widget_clock_strip, "$text, ${date.weekday} ${date.line}")
                 } else {
-                    views.setContentDescription(R.id.widget_clock_strip, null)
+                    views.setContentDescription(R.id.widget_clock_strip, text)
                 }
                 views.setOnClickPendingIntent(R.id.widget_clock_strip, appShortcut(context, "today", "widget-clock-$id"))
             }
-            views.setImageViewBitmap(R.id.widget_image, WidgetArtwork(space, ar, dark, context.assets).bitmap(density))
+            val artworkKey = ArtworkKey(space.layout.toString(), size, ar, dark, density, now.toLocalDate())
+            val bitmap = artwork.get(artworkKey) ?: WidgetArtwork(space, ar, dark, context.assets)
+                .bitmap(density, now.toLocalDate()).also { artwork.put(artworkKey, it) }
+            views.setImageViewBitmap(R.id.widget_image, bitmap)
             val edit = appShortcut(context, studio, "widget-studio-$id")
             views.setOnClickPendingIntent(R.id.widget_image, edit)
             views.setViewVisibility(R.id.widget_chrome, View.VISIBLE)

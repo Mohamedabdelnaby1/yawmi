@@ -30,6 +30,45 @@ void main() {
     expect(restored.single['timeLanguage'], 'ar');
   });
 
+  test(
+    'Installed layouts retain their own labels, direction, date and clock',
+    () {
+      final state = freshState()
+        ..['widgets'] = [
+          {
+            'id': 'english',
+            'enabled': ['water'],
+            'widgetLanguage': 'en',
+            'clock': true,
+          },
+          {
+            'id': 'arabic',
+            'enabled': ['water'],
+            'widgetLanguage': 'ar',
+            'timeLanguage': 'ar',
+            'clockLanguage': 'en',
+            'clock': true,
+          },
+        ];
+      final layouts =
+          widgetSnapshot(state, true, DateTime(2026, 11, 22))['layouts'] as Map;
+      final english = layouts['english'] as Map;
+      final arabic = layouts['arabic'] as Map;
+      expect(english['ar'], false);
+      expect(english['timeLanguage'], 'en');
+      expect(english['clockLanguage'], 'en');
+      expect(english['cards'].single['title'], 'Water');
+      expect(arabic['ar'], true);
+      expect(arabic['timeLanguage'], 'ar');
+      expect(arabic['clockLanguage'], 'en');
+      expect(arabic['cards'].single['title'], 'المياه');
+      expect(
+        restoreWidgetDesigns(state, state['widgets']).first['widgetLanguage'],
+        'en',
+      );
+    },
+  );
+
   testWidgets(
     'GitHub update center allows downloading and shows Android install permission',
     (tester) async {

@@ -10,12 +10,9 @@
     <LinearLayout android:id="@+id/widget_clock_strip" android:layout_width="match_parent" android:layout_height="wrap_content"
         android:orientation="horizontal" android:visibility="gone" android:gravity="center"
         android:layoutDirection="ltr" android:layout_gravity="top">
-        <TextClock android:id="@+id/widget_clock_time" android:layout_width="wrap_content" android:layout_height="wrap_content"
+        <TextView android:id="@+id/widget_clock_time" android:layout_width="wrap_content" android:layout_height="wrap_content"
             android:includeFontPadding="false" android:singleLine="true" android:textDirection="ltr"
-            android:fontFamily="@font/clock_latin" />
-        <TextClock android:id="@+id/widget_clock_arabic" android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:includeFontPadding="false" android:singleLine="true" android:textDirection="ltr"
-            android:visibility="gone" android:fontFamily="@font/clock_arabic" />
+            android:fontFamily="sans-serif-black" />
     </LinearLayout>
     <FrameLayout android:id="@+id/widget_chrome" android:layout_width="match_parent" android:layout_height="match_parent"
         android:visibility="gone">

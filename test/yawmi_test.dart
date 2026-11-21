@@ -266,6 +266,8 @@ void main() {
       );
       await tester.pumpAndSettle();
       await tester.scrollUntilVisible(find.text('Adaptive routine'), 180);
+      await tester.ensureVisible(find.text('Adaptive routine'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Adaptive routine'));
       await tester.pumpAndSettle();
       await tester.scrollUntilVisible(find.text('Undo adjustment'), 180);

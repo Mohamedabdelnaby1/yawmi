@@ -43,6 +43,7 @@
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/yawmi_widget_grid" />
         </receiver>
         <receiver android:name=".WidgetPinned" android:exported="false" />
+        <receiver android:name=".WidgetClockReceiver" android:exported="false" />
         <receiver android:name=".AlarmReceiver" android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />

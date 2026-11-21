@@ -140,7 +140,7 @@ internal class WidgetArtwork(
     private val bold = loadFont(assets, "Tajawal-Bold.ttf", Typeface.DEFAULT_BOLD)
     private val regular = loadFont(assets, "Tajawal-Regular.ttf", Typeface.DEFAULT)
 
-    fun bitmap(density: Float): Bitmap {
+    fun bitmap(density: Float, day: LocalDate): Bitmap {
         val w = space.width
         val h = space.height
         // RemoteViews carries multiple variants on some launchers. Cap each independent bitmap.
@@ -155,7 +155,7 @@ internal class WidgetArtwork(
         canvas.clipPath(Path().apply { addRoundRect(bounds, space.outerCorner, space.outerCorner, Path.Direction.CW) })
         panel(canvas, bounds, alpha(base, opacity), space.outerCorner)
         if (space.clock) {
-            drawClock(canvas)
+            drawClock(canvas, day)
         } else if (space.heading) {
             val title = space.layout.optString("heading").ifBlank { if (ar) "يومي" else "Yawmi" }
             val area = RectF(space.inset + 5, space.inset, w - space.inset - 5, space.top)
@@ -177,7 +177,7 @@ internal class WidgetArtwork(
         return bitmap
     }
 
-    private fun drawClock(canvas: Canvas) {
+    private fun drawClock(canvas: Canvas, day: LocalDate) {
         val panes = space.clockFrame(ar)
         val level = alpha(ink, .08f)
         val timeFill = mix(base, 0xffd6eaa0.toInt(), if (dark) .13f else .28f)
@@ -188,7 +188,7 @@ internal class WidgetArtwork(
             panes.date?.let { panel(canvas, it, level, space.panelCorner(it)) }
         }
         val dateArea = panes.date ?: return
-        val words = widgetDate(space, ar)
+        val words = widgetDate(space, ar, day)
         if (!space.fullDate) {
             text(canvas, words.line, RectF(dateArea).apply { inset(5f, 0f) }, 11f, ink,
                 strong = true, middle = true, rtl = words.arabic, center = true)
