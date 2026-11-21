@@ -1,7 +1,7 @@
 name: yawmi
 description: A local health journal for Android.
 publish_to: none
-version: 1.4.0+21
+version: 1.5.0+22
 environment:
   sdk: '>=3.10.0 <4.0.0'
 dependencies:

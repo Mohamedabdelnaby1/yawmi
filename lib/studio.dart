@@ -1535,6 +1535,18 @@ extension _Studio on _HomeState {
                     const SizedBox(height: 8),
                     _choiceSetting(
                       c,
+                      t('أرقام الساعة', 'Clock digits'),
+                      scene.timeLanguage,
+                      [
+                        ('en', t('English · 09:41', 'English · 09:41')),
+                        ('ar', t('العربية · ٠٩:٤١', 'Arabic · ٠٩:٤١')),
+                      ],
+                      (v) => redraw(() => draft['timeLanguage'] = v),
+                      icon: Icons.pin_outlined,
+                    ),
+                    const SizedBox(height: 8),
+                    _choiceSetting(
+                      c,
                       t('نظام الوقت', 'Time format'),
                       scene.clockFormat,
                       [
@@ -2351,6 +2363,25 @@ extension _Studio on _HomeState {
           ),
         ),
         const SizedBox(height: 8),
+        if (_hasUpdateChannel) ...[
+          ControlCard(
+            title: t('تحديثات يومي', 'Yawmi updates'),
+            subtitle: _availableUpdate == null
+                ? t(
+                    'افحص أحدث إصدار على GitHub',
+                    'Check the latest GitHub release',
+                  )
+                : t(
+                    'الإصدار $_availableUpdate متاح',
+                    'Version $_availableUpdate is available',
+                  ),
+            icon: Icons.system_update_rounded,
+            tonalColor: mint,
+            toned: _availableUpdate != null,
+            onTap: _openUpdates,
+          ),
+          const SizedBox(height: 8),
+        ],
         ControlCard(
           title: t('عن التطبيق', 'About Yawmi'),
           icon: Icons.info_outline_rounded,

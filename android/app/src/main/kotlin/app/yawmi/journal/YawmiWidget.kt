@@ -13,9 +13,6 @@ import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.text.SpannableString
-import android.text.Spanned
-import android.text.style.RelativeSizeSpan
 import android.util.Log
 import android.util.SizeF
 import android.util.TypedValue
@@ -300,14 +297,14 @@ open class YawmiWidget : AppWidgetProvider() {
             val density = context.resources.displayMetrics.density
             fun px(dp: Float) = (dp * density).roundToInt().coerceAtLeast(0)
             if (clock) {
-                val time = R.id.widget_clock_time
+                val arabicTime = space.layout.optString("timeLanguage", "en") == "ar"
+                val time = if (arabicTime) R.id.widget_clock_arabic else R.id.widget_clock_time
+                views.setViewVisibility(R.id.widget_clock_arabic, if (arabicTime) View.VISIBLE else View.GONE)
+                views.setViewVisibility(R.id.widget_clock_time, if (arabicTime) View.GONE else View.VISIBLE)
                 val color = if (dark) 0xfff7f6ee.toInt() else 0xff152944.toInt()
                 val format = space.layout.optString("clockFormat", "system")
-                val twelve: CharSequence = if (space.width < 190) "h:mm" else SpannableString("h:mm a").apply {
-                    setSpan(RelativeSizeSpan(.48f), length - 1, length, Spanned.SPAN_INCLUSIVE_INCLUSIVE)
-                }
-                views.setCharSequence(time, "setFormat12Hour", if (format == "24") "HH:mm" else twelve)
-                views.setCharSequence(time, "setFormat24Hour", if (format == "12") twelve else "HH:mm")
+                views.setCharSequence(time, "setFormat12Hour", if (format == "24") "HH:mm" else "h:mm")
+                views.setCharSequence(time, "setFormat24Hour", if (format == "12") "h:mm" else "HH:mm")
                 views.setTextColor(time, color)
                 views.setTextViewTextSize(time, TypedValue.COMPLEX_UNIT_DIP, space.clockSize)
                 val frame = space.clockFrame(ar).time

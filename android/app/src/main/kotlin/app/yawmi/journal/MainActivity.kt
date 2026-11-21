@@ -27,6 +27,25 @@ class MainActivity : FlutterActivity() {
             try {
                 when (call.method) {
                     "takeRoute" -> { result.success(route); route = null }
+                    "openUpdates" -> {
+                        YawmiUpdates.onOpen(applicationContext, call.arguments == true)
+                        result.success(YawmiUpdates.status(applicationContext))
+                    }
+                    "updateStatus" -> result.success(YawmiUpdates.status(applicationContext))
+                    "checkUpdate" -> {
+                        YawmiUpdates.check(applicationContext, manual = true)
+                        result.success(null)
+                    }
+                    "automaticUpdates" -> {
+                        YawmiUpdates.setAutomatic(applicationContext, call.argument<Boolean>("enabled") == true,
+                            call.argument<Boolean>("arabic") == true)
+                        result.success(null)
+                    }
+                    "downloadUpdate" -> {
+                        YawmiUpdates.download(applicationContext)
+                        result.success(null)
+                    }
+                    "installUpdate" -> result.success(YawmiUpdates.install(this))
                     "openFacebook" -> {
                         val page = Uri.parse(call.arguments as? String ?: "")
                         require(page.scheme == "https" &&

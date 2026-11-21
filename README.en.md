@@ -44,6 +44,27 @@ The screenshots use sample data. Yawmi is a personal logging and reminder tool.
 
 Requires Android 8 or later. Android may ask for permission to install the APK from the app that opens it. To test reminders, visit **Today → bell → Delivery on this device**.
 
+### Walkthrough
+
+[**Watch the animated tour**](https://mohamedabdelnaby1.github.io/yawmi/?lang=en#demo)
+
+| First-run setup | Today | Hydration |
+| :-: | :-: | :-: |
+| <img src="docs/media/onboarding.webp" width="224" alt="Condition selection in first-run setup"> | <img src="docs/media/today.webp" width="224" alt="Today shortcuts and journal entries"> | <img src="docs/media/hydration.webp" width="224" alt="Interactive water bottle and cup size controls"> |
+| **History** | **Reminders** | **Backup and reports** |
+| <img src="docs/media/history.webp" width="224" alt="Health journal search and filters"> | <img src="docs/media/reminders.webp" width="224" alt="Reminder center for water and measurements"> | <img src="docs/media/data.webp" width="224" alt="Import, export, and backup center"> |
+
+1. **Setup.** Choose the health conditions you track or set up a general journal. Review the suggested cards and add custom trackers at any time.
+2. **Today and History.** Use the add button or open a tracker card to log a reading. Pick a past date, compare periods, or open your glucose settings to change the rolling average and units.
+3. **Routine.** Set dose times and meal timing. Open the medicine cabinet for stock and expiry, or Upcoming follow-ups to plan a lab retest, visit, or custom reminder.
+4. **Reminders.** Open the bell on Today to manage measurement, medication, and hydration alerts. Set hours of quiet, test Android delivery, or review adaptive routine suggestions in Routine.
+5. **Widgets.** In Widget Studio, choose what to show and the number of columns. In Appearance, select English or Arabic clock digits, an independent date language, and 12- or 24-hour time. Privacy controls what shows on your home screen.
+6. **Data.** Export a CSV or PDF, or save a password-protected backup. The import center restores a Yawmi backup or lets you preview CSV readings before adding them.
+
+### In-app updates
+
+Install this APK once if you use version 1.4.0 or earlier. The GitHub build checks when you open Yawmi and periodically in the background, subject to Android scheduling. In **More → Yawmi updates**, check manually or turn off automatic checks. Download a new version from the same screen. Yawmi checks the APK digest and signer before launching Android’s installer for confirmation.
+
 Use Flutter 3.50.1, JDK 21 and Android SDK 36. The Android project pins the NDK and Gradle versions. Some plugins also need SDK 35.
 
 ```sh
@@ -53,6 +74,8 @@ YAWMI_SIGNING_MODE=testing flutter build apk --release
 ```
 
 On Windows, `./build-android.ps1` stages the project in an ASCII path if your checkout path includes Arabic characters. Signing options are documented in the script.
+
+[GitHub release format and signing](docs/releasing.md)
 
 ## Contributing
 

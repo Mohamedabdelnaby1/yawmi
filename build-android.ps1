@@ -2,6 +2,7 @@ param(
     [string]$Flutter = 'flutter',
     [ValidateSet('APK', 'AAB')][string]$Format = 'APK',
     [switch]$Distribution,
+    [switch]$GithubUpdates,
     [switch]$Offline,
     [string]$Output,
     [string]$FacebookUrl = '',
@@ -16,6 +17,9 @@ if ($PrivacyUrl -and (-not [Uri]::TryCreate($PrivacyUrl, [UriKind]::Absolute, [r
 }
 if ($Distribution -and ($Format -ne 'AAB' -or -not $PrivacyUrl)) {
     throw 'Distribution requires -Format AAB and -PrivacyUrl.'
+}
+if ($GithubUpdates -and $Format -ne 'APK') {
+    throw 'GitHub in-app updates require an APK.'
 }
 if (-not $Output) {
     $versionLine = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'pubspec.yaml') |
@@ -37,6 +41,8 @@ if ($tempRoot -match '[^\x00-\x7F]') {
 $buildPath = Join-Path $tempRoot ('YawmiBuild-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $buildPath | Out-Null
 $previousSigningMode = $env:YAWMI_SIGNING_MODE
+$previousUpdateMode = $env:YAWMI_GITHUB_UPDATES
+$env:YAWMI_GITHUB_UPDATES = if ($GithubUpdates) { 'true' } else { 'false' }
 $env:YAWMI_SIGNING_MODE = if ($Distribution) { 'release' }
     elseif ($Format -eq 'AAB') { 'unsigned' }
     else { 'testing' }
@@ -72,6 +78,7 @@ try {
     }
 } finally {
     $env:YAWMI_SIGNING_MODE = $previousSigningMode
+    $env:YAWMI_GITHUB_UPDATES = $previousUpdateMode
     $resolvedBuild = [IO.Path]::GetFullPath((Resolve-Path -LiteralPath $buildPath).ProviderPath)
     if ($resolvedBuild -eq $buildPath -and
         $resolvedBuild.StartsWith((Join-Path $tempRoot 'YawmiBuild-'), [StringComparison]::OrdinalIgnoreCase)) {

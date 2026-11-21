@@ -54,6 +54,8 @@ void main() {
         Platform.environment['YAWMI_CAPTURE_NOTIFICATIONS_ONLY'] == '1';
     final followUpsOnly =
         capture && Platform.environment['YAWMI_CAPTURE_FOLLOW_UPS'] == '1';
+    final updateOnly =
+        capture && Platform.environment['YAWMI_CAPTURE_UPDATES'] == '1';
     if (capture) {
       for (final (family, assets) in [
         (
@@ -204,10 +206,46 @@ void main() {
               !conditionsOnly &&
               !dailyOnly &&
               !notificationsOnly &&
-              !followUpsOnly,
+              !followUpsOnly &&
+              !updateOnly,
         ),
       ),
     );
+    if (updateOnly) {
+      await journal.change((d) => d['stage'] = 3);
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(platform, (call) async {
+        if (call.method != 'updateStatus') return null;
+        return {
+          'enabled': true,
+          'automatic': true,
+          'installed': '1.5.0',
+          'version': '1.6.0',
+          'size': 66034996,
+          'notes':
+              '• تحسين عرض الساعة في المساحات الصغيرة.\n• ضبط مواعيد التنبيهات.',
+          'progress': -1,
+          'checkedAt': at.millisecondsSinceEpoch,
+        };
+      });
+      addTearDown(() => messenger.setMockMethodCallHandler(platform, null));
+      await tester.pumpAndSettle();
+      final navigator = Navigator.of(tester.element(find.byType(AppBar).first));
+      navigator.push(
+        MaterialPageRoute<void>(
+          builder: (_) => const YawmiUpdateCenter(ar: true),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await take('updates-ar');
+      expect(find.text('نزّل التحديث'), findsOneWidget);
+      await back();
+      await open(tab('المزيد'));
+      await open(find.text('الاستيراد والتصدير'), shot: 'data-ar');
+      expect(tester.takeException(), isNull);
+      return;
+    }
     if (followUpsOnly) {
       await journal.change((d) {
         d['stage'] = 3;
@@ -797,6 +835,7 @@ void main() {
       await open(find.byTooltip('Add medication'), shot: 'medicine-form-en');
       await back();
       await open(find.text('Notifications are off'), shot: 'notifications-en');
+      await tester.scrollUntilVisible(find.text('Quiet hours'), 220);
       await open(find.text('Quiet hours'), shot: 'quiet-hours-en');
       await open(find.text('During quiet hours'));
       await open(

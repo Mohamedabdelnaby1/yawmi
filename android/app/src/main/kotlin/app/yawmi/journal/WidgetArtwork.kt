@@ -47,7 +47,7 @@ internal class WidgetSpace(size: SizeF, val layout: JSONObject) {
     val clockDate = layout.optBoolean("clockDate", true)
     val stackedClock = clockDate && width < 146
     val fullDate = clockDate && width >= 210
-    val clockSize = if (stackedClock) 18f else if (width < 190) 22f else 27f
+    val clockSize = if (stackedClock) 20f else if (width < 190) 24f else 29f
     val headerHeight = if (!header) 0f else if (clock) {
         if (narrow) 47f else 50f
     } else if (narrow) 31f else 48f
@@ -89,7 +89,7 @@ internal class WidgetSpace(size: SizeF, val layout: JSONObject) {
             val date = RectF(outer).apply { top = bottom - 16 }
             return ClockFrame(outer, RectF(outer).apply { bottom = date.top }, date)
         }
-        val timeWidth = (outer.width() * .43f).coerceIn(60f, 132f)
+        val timeWidth = (outer.width() * .46f).coerceIn(64f, 142f)
         val time = RectF(outer).apply { if (ar) left = right - timeWidth else right = left + timeWidth }
         val date = RectF(outer).apply { if (ar) right = time.left - gap else left = time.right + gap }
         return ClockFrame(outer, time, date)
@@ -180,10 +180,11 @@ internal class WidgetArtwork(
     private fun drawClock(canvas: Canvas) {
         val panes = space.clockFrame(ar)
         val level = alpha(ink, .08f)
+        val timeFill = mix(base, 0xffd6eaa0.toInt(), if (dark) .13f else .28f)
         if (space.stackedClock) {
-            panel(canvas, panes.outer, level, space.panelCorner(panes.outer))
+            panel(canvas, panes.outer, timeFill, space.panelCorner(panes.outer))
         } else {
-            panel(canvas, panes.time, level, space.panelCorner(panes.time))
+            panel(canvas, panes.time, timeFill, space.panelCorner(panes.time))
             panes.date?.let { panel(canvas, it, level, space.panelCorner(it)) }
         }
         val dateArea = panes.date ?: return

@@ -5,12 +5,17 @@ plugins {
 }
 
 val yawmiSigningMode = providers.environmentVariable("YAWMI_SIGNING_MODE").orElse("testing").get()
+val githubUpdates = providers.environmentVariable("YAWMI_GITHUB_UPDATES").orElse("false").get() == "true"
 require(yawmiSigningMode in setOf("testing", "unsigned", "release")) { "Invalid YAWMI_SIGNING_MODE." }
 
 android {
     namespace = "app.yawmi.journal"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
+    buildFeatures { buildConfig = true }
+    if (githubUpdates) {
+        sourceSets.getByName("release").manifest.srcFile("src/github/AndroidManifest.xml")
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -30,6 +35,7 @@ android {
         // flag during build.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        buildConfigField("boolean", "GITHUB_UPDATES", githubUpdates.toString())
     }
 
     if (yawmiSigningMode == "release") {

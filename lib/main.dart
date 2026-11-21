@@ -34,6 +34,7 @@ part 'daily.dart';
 part 'stock.dart';
 part 'follow_ups.dart';
 part 'notifications.dart';
+part 'updates.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -144,6 +145,9 @@ class _HomeState extends State<_Home> with WidgetsBindingObserver {
   bool _exact = false;
   bool _widgetError = false;
   bool _addingWater = false;
+  bool _hasUpdateChannel = false;
+  bool _syncingUpdates = false;
+  String? _availableUpdate;
   Timer? _refresh, _clock;
   DateTime now = DateTime.now();
   JournalRow get data => widget.db.state;
@@ -203,6 +207,7 @@ class _HomeState extends State<_Home> with WidgetsBindingObserver {
     unawaited(_autoArrange(now));
     unawaited(clearSharedReports().catchError((Object _) {}));
     if (!Platform.isAndroid) return;
+    unawaited(_refreshUpdateOffer());
     try {
       final route = await platform.invokeMethod<String>('takeRoute');
       if (route != null && mounted) await _route(route);
@@ -354,6 +359,8 @@ class _HomeState extends State<_Home> with WidgetsBindingObserver {
           await _openWidgetInstance(int.parse(id));
         case ['routine']:
           setState(() => tab = 2);
+        case ['updates']:
+          await _openUpdates();
         case ['stock', final id]:
           setState(() => tab = 2);
           final med = rows(
@@ -470,6 +477,12 @@ class _HomeState extends State<_Home> with WidgetsBindingObserver {
           ],
         ),
         actions: [
+          if (_availableUpdate != null)
+            IconButton.filledTonal(
+              onPressed: _openUpdates,
+              tooltip: t('تحديث جديد متاح', 'Update available'),
+              icon: const Icon(Icons.system_update_rounded),
+            ),
           if (tab == 0)
             IconButton.filledTonal(
               onPressed: _notificationSettings,

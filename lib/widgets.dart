@@ -287,6 +287,8 @@ List<JournalRow> restoreWidgetDesigns(JournalRow state, Object? raw) {
             'clockFormat': item['clockFormat'],
           if (['ar', 'en'].contains(item['clockLanguage']))
             'clockLanguage': item['clockLanguage'],
+          if (['ar', 'en'].contains(item['timeLanguage']))
+            'timeLanguage': item['timeLanguage'],
           if (['off', 'suggest', 'auto'].contains(item['layoutLearning']))
             'layoutLearning': item['layoutLearning'],
           if (item['opacity'] case final num opacity when opacity.isFinite)
@@ -470,20 +472,21 @@ class WidgetScene {
   bool get clockDate => config['clockDate'] != false;
   String get clockFormat => config['clockFormat']?.toString() ?? 'system';
   String get clockLanguage => config['clockLanguage']?.toString() ?? 'app';
+  String get timeLanguage => config['timeLanguage'] == 'ar' ? 'ar' : 'en';
   bool get dateArabic =>
       clockLanguage == 'ar' || (clockLanguage == 'app' && ar);
   String get dateLocale => dateArabic ? 'ar' : 'en';
   bool get stackedClock => clockDate && viewport.width < 146;
   bool get fullDate => clockDate && viewport.width >= 210;
   double get clockSize => stackedClock
-      ? 18
+      ? 20
       : viewport.width < 190
-      ? 22
-      : 27;
+      ? 24
+      : 29;
   double get clockTimeWidth {
     final chromeWidth = (toolbar ? 48 : 0) + (refresh ? 48 : 0);
     final available = viewport.width - 2 * inset - chromeWidth;
-    return (available * .43).clamp(60.0, 132.0);
+    return (available * .46).clamp(64.0, 142.0);
   }
 
   String get dateHeading => DateFormat('EEEE', dateLocale).format(now);
@@ -885,7 +888,10 @@ class SceneArt extends StatelessWidget {
         scene.clockFormat == '24' ||
         scene.clockFormat == 'system' &&
             MediaQuery.alwaysUse24HourFormatOf(context);
-    final time = DateFormat(use24 ? 'HH:mm' : 'h:mm', 'en').format(scene.now);
+    final time = DateFormat(
+      use24 ? 'HH:mm' : 'h:mm',
+      scene.timeLanguage,
+    ).format(scene.now);
     final dateDir = scene.dateArabic ? TextDirection.rtl : TextDirection.ltr;
     final surface = _ink.withValues(alpha: .08);
     final clockFace = Center(
@@ -904,16 +910,6 @@ class SceneArt extends StatelessWidget {
                 height: 1.08,
               ),
             ),
-            if (!use24 && scene.viewport.width >= 190) ...[
-              const SizedBox(width: 3),
-              Text(
-                DateFormat('a', scene.ar ? 'ar' : 'en').format(scene.now),
-                style: const TextStyle(
-                  fontSize: 9,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
           ],
         ),
       ),
@@ -979,10 +975,12 @@ class SceneArt extends StatelessWidget {
       ),
     );
 
-    Widget panel(Widget child) => LayoutBuilder(
+    Widget panel(Widget child, {bool time = false}) => LayoutBuilder(
       builder: (_, bounds) => DecoratedBox(
         decoration: BoxDecoration(
-          color: surface,
+          color: time
+              ? Color.alphaBlend(leaf.withValues(alpha: .15), surface)
+              : surface,
           borderRadius: BorderRadius.circular(
             scene.panelCorner(bounds.maxWidth, bounds.maxHeight),
           ),
@@ -993,7 +991,7 @@ class SceneArt extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: WidgetScene.gap),
       child: !scene.clockDate
-          ? panel(clockFace)
+          ? panel(clockFace, time: true)
           : scene.stackedClock
           ? panel(
               Column(
@@ -1002,10 +1000,14 @@ class SceneArt extends StatelessWidget {
                   SizedBox(height: 16, child: dateLine(full: false)),
                 ],
               ),
+              time: true,
             )
           : Row(
               children: [
-                SizedBox(width: scene.clockTimeWidth, child: panel(clockFace)),
+                SizedBox(
+                  width: scene.clockTimeWidth,
+                  child: panel(clockFace, time: true),
+                ),
                 const SizedBox(width: WidgetScene.gap),
                 Expanded(
                   child: panel(Center(child: dateLine(full: scene.fullDate))),
@@ -1391,6 +1393,7 @@ JournalRow widgetSnapshot(JournalRow state, bool ar, DateTime moment) {
       'clockDate': scene.clockDate,
       'clockFormat': scene.clockFormat,
       'clockLanguage': scene.dateLocale,
+      'timeLanguage': scene.timeLanguage,
       'header': config['header'] != false,
       'showSettings': config['showSettings'] != false,
       'showRefresh': config['showRefresh'] != false,
