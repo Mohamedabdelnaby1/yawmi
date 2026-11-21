@@ -1,0 +1,37 @@
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent" android:layoutDirection="ltr">
+    <ImageView android:id="@+id/widget_image" android:layout_width="match_parent" android:layout_height="match_parent"
+        android:importantForAccessibility="no" android:scaleType="fitCenter" />
+    <TextView android:id="@+id/widget_fallback_text" android:layout_width="match_parent" android:layout_height="match_parent"
+        android:background="@drawable/widget_fallback" android:gravity="center" android:padding="8dp"
+        android:text="@string/widget_name" android:textColor="#FFFFFF" android:textSize="14sp" />
+    <LinearLayout android:id="@+id/widget_buttons" android:layout_width="match_parent" android:layout_height="match_parent"
+        android:orientation="vertical" android:visibility="gone" />
+    <LinearLayout android:id="@+id/widget_clock_strip" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:visibility="gone" android:gravity="center"
+        android:layoutDirection="ltr" android:layout_gravity="top">
+        <TextClock android:id="@+id/widget_clock_time" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:includeFontPadding="false" android:singleLine="true" android:textDirection="ltr"
+            android:fontFamily="sans-serif-medium" />
+    </LinearLayout>
+    <FrameLayout android:id="@+id/widget_chrome" android:layout_width="match_parent" android:layout_height="match_parent"
+        android:visibility="gone">
+        <LinearLayout android:id="@+id/widget_tools_left" android:layout_width="wrap_content" android:layout_height="48dp"
+            android:layout_gravity="top|left" android:orientation="horizontal" android:visibility="gone">
+            <FrameLayout android:id="@+id/widget_settings_left" android:layout_width="48dp" android:layout_height="match_parent"
+                android:foreground="?android:attr/selectableItemBackground" android:importantForAccessibility="yes" />
+            <FrameLayout android:id="@+id/widget_refresh_left" android:layout_width="48dp" android:layout_height="match_parent"
+                android:foreground="?android:attr/selectableItemBackground" android:importantForAccessibility="yes" />
+        </LinearLayout>
+        <LinearLayout android:id="@+id/widget_tools_right" android:layout_width="wrap_content" android:layout_height="48dp"
+            android:layout_gravity="top|right" android:orientation="horizontal" android:visibility="gone">
+            <FrameLayout android:id="@+id/widget_refresh_right" android:layout_width="48dp" android:layout_height="match_parent"
+                android:foreground="?android:attr/selectableItemBackground" android:importantForAccessibility="yes" />
+            <FrameLayout android:id="@+id/widget_settings_right" android:layout_width="48dp" android:layout_height="match_parent"
+                android:foreground="?android:attr/selectableItemBackground" android:importantForAccessibility="yes" />
+        </LinearLayout>
+        <FrameLayout android:id="@+id/widget_shortcut" android:layout_width="match_parent" android:layout_height="48dp"
+            android:layout_gravity="bottom" android:visibility="gone"
+            android:foreground="?android:attr/selectableItemBackground" android:importantForAccessibility="yes" />
+    </FrameLayout>
+</FrameLayout>

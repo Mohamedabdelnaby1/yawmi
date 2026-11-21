@@ -1,0 +1,45 @@
+name: yawmi
+description: A local health journal for Android.
+publish_to: none
+version: 1.4.0+21
+environment:
+  sdk: '>=3.10.0 <4.0.0'
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  intl: any
+  sqflite: ^2.4.2
+  path: ^1.9.1
+  file_picker: ^10.3.0
+  path_provider: ^2.1.5
+  share_plus: ^12.0.0
+  cryptography: ^2.7.0
+  pdf: ^3.11.3
+  shimmer: ^3.0.0
+  flutter_animate: ^4.5.2
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/yawmi-field-notes.webp
+    - assets/Tajawal-Regular.ttf
+    - assets/Tajawal-Bold.ttf
+  fonts:
+    - family: Tajawal
+      fonts:
+        - asset: assets/Tajawal-Regular.ttf
+        - asset: assets/Tajawal-Bold.ttf
+          weight: 700
+    - family: PlexArabic
+      fonts:
+        - asset: assets/IBMPlexSansArabic-Regular.ttf
+        - asset: assets/IBMPlexSansArabic-Bold.ttf
+          weight: 700
+    - family: Manrope
+      fonts:
+        - asset: assets/Manrope.ttf

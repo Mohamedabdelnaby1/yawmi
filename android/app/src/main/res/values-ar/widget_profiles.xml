@@ -1,0 +1,9 @@
+<resources>
+    <string name="widget_strip_name">يومي · شريط سريع</string>
+    <string name="widget_tower_name">يومي · بطاقات رأسية</string>
+    <string name="widget_board_name">يومي · لوحة المتابعات</string>
+    <string name="widget_square_name">يومي · بطاقة واحدة</string>
+    <string name="widget_matrix_name">يومي · أربع بطاقات</string>
+    <string name="widget_portrait_name">يومي · لوحة طولية</string>
+    <string name="widget_grid_name">يومي · شبكة متابعات</string>
+</resources>

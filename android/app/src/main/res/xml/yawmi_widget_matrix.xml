@@ -1,0 +1,5 @@
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="236dp" android:minHeight="171dp" android:minResizeWidth="48dp" android:minResizeHeight="48dp"
+    android:targetCellWidth="4" android:targetCellHeight="3" android:initialLayout="@layout/yawmi_widget"
+    android:configure="app.yawmi.journal.WidgetConfiguration" android:widgetFeatures="configuration_optional|reconfigurable|hide_from_picker"
+    android:resizeMode="horizontal|vertical" android:updatePeriodMillis="1800000" android:widgetCategory="home_screen" />

@@ -1,0 +1,9 @@
+<resources>
+    <string name="widget_strip_name">Yawmi · Quick strip</string>
+    <string name="widget_tower_name">Yawmi · Vertical stack</string>
+    <string name="widget_board_name">Yawmi · Dashboard</string>
+    <string name="widget_square_name">Yawmi · Single card</string>
+    <string name="widget_matrix_name">Yawmi · Four cards</string>
+    <string name="widget_portrait_name">Yawmi · Portrait panel</string>
+    <string name="widget_grid_name">Yawmi · Grid</string>
+</resources>

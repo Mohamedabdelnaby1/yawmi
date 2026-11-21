@@ -1,0 +1,6 @@
+<resources>
+    <style name="LaunchTheme" parent="@style/YawmiLaunchBase">
+        <item name="android:windowSplashScreenBackground">@color/yawmi_launch_base</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_yawmi</item>
+    </style>
+</resources>
