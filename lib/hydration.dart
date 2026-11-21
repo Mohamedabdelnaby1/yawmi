@@ -11,7 +11,9 @@ Color _waterAccent(BuildContext c) =>
 extension _Hydration on _HomeState {
   double _waterLevel(double n) {
     final goal = data['waterGoal'] as num?;
-    return goal != null && goal > 0 ? (n / goal).clamp(0, 1) : n / (n + 600);
+    return waterTrackingMode(data) != 'log' && goal != null && goal > 0
+        ? (n / goal).clamp(0, 1)
+        : n / (n + 600);
   }
 
   Widget _hydrationAmount(
@@ -184,6 +186,23 @@ extension _Hydration on _HomeState {
                             ),
                           ),
                         ),
+                        if (waterTrackingMode(data) == 'limit' &&
+                            data['waterGoal'] is num)
+                          Center(
+                            child: Padding(
+                              padding: const EdgeInsets.only(top: 5),
+                              child: Text(
+                                t(
+                                  'الحد اليومي المسجّل ${number((data['waterGoal'] as num).toDouble())} مل',
+                                  'Recorded daily limit ${number((data['waterGoal'] as num).toDouble())} mL',
+                                ),
+                                style: TextStyle(
+                                  color: _waterText(c),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
                         Center(
                           child: SizedBox(
                             width: 224,
@@ -212,7 +231,7 @@ extension _Hydration on _HomeState {
                   const SizedBox(height: 10),
                   _waterWeek(c),
                   SectionTitle(
-                    t('إدخالات اليوم', 'Today’s entries'),
+                    t('تسجيلات النهارده', 'Today’s entries'),
                     action: IconButton(
                       icon: const Icon(Icons.show_chart),
                       tooltip: t('كل الاتجاهات', 'All trends'),

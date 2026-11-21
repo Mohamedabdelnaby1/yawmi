@@ -363,6 +363,32 @@ extension _Editors on _HomeState {
     var note = previous?['note'] as String? ?? item?['note'] as String? ?? '';
     var contextValue =
         previous?['context'] as String? ?? item?['context'] as String? ?? '';
+    var moodTone =
+        previous?['moodTone'] as String? ?? item?['moodTone'] as String? ?? '';
+    var readingSource =
+        previous?['readingSource'] as String? ??
+        item?['readingSource'] as String? ??
+        '';
+    var mealMinutes =
+        previous?['mealMinutes'] as String? ??
+        item?['mealMinutes']?.toString() ??
+        '';
+    final lab = readLabDetails(item?['labDetails']);
+    var labResult =
+        previous?['labResult'] as String? ?? lab?['result']?.toString() ?? '';
+    var labUnit =
+        previous?['labUnit'] as String? ?? lab?['unit'] as String? ?? '';
+    var laboratory =
+        previous?['laboratory'] as String? ??
+        lab?['laboratory'] as String? ??
+        '';
+    var labRange =
+        previous?['labRange'] as String? ?? lab?['reference'] as String? ?? '';
+    JournalRow? labAttachment =
+        (previous?['labAttachment'] ?? item?['labAttachment']) as JournalRow?;
+    JournalRow? firstPressure;
+    DateTime? firstMeasuredAt;
+    var secondSystolic = '', secondDiastolic = '';
     var linked =
         previous?['condition'] as String? ??
         rows(item?['conditions']).firstOrNull?['id'] as String? ??
@@ -378,7 +404,7 @@ extension _Editors on _HomeState {
               ? null
               : readNumber(input[tracker.fields.first.id] ?? '');
           final dateLabel = dayKey(at) == dayKey(DateTime.now())
-              ? t('تسجيل اليوم', 'Logging for today')
+              ? t('تسجيل لليوم', 'Logging for today')
               : prettyDate(at, 'EEEE، d MMMM');
           final activeConditions = rows(
             data['conditions'],
@@ -386,7 +412,61 @@ extension _Editors on _HomeState {
           Future<void> commit() async {
             if (!form.currentState!.validate()) return;
             if (!canPlan && at.isAfter(DateTime.now())) {
-              _toast(t('اختار وقتًا حصل بالفعل', 'Choose a time in the past'));
+              _toast(t('اختار وقت قبل دلوقتي', 'Choose a time in the past'));
+              return;
+            }
+            final minutes = int.tryParse(normalize(mealMinutes));
+            if (tracker.id == 'glucose' &&
+                contextValue == 'after meal' &&
+                mealMinutes.trim().isNotEmpty &&
+                (minutes == null || minutes < 0 || minutes > 1440)) {
+              _toast(
+                t(
+                  'اكتب عدد دقايق بين ٠ و١٤٤٠.',
+                  'Enter a duration from 0 to 1440 minutes.',
+                ),
+              );
+              return;
+            }
+            final labNumber = readNumber(labResult);
+            if (tracker.id == 'lab' &&
+                (labResult.trim().isNotEmpty || labUnit.trim().isNotEmpty) &&
+                (labNumber == null ||
+                    labUnit.trim().isEmpty ||
+                    at.isAfter(DateTime.now()))) {
+              _toast(
+                t(
+                  'راجع نتيجة التحليل والوحدة وتاريخ العينة.',
+                  'Check the result, unit, and sample date.',
+                ),
+              );
+              return;
+            }
+            final second = [
+              readNumber(secondSystolic),
+              readNumber(secondDiastolic),
+            ];
+            if (firstPressure != null &&
+                (DateTime.now().difference(firstMeasuredAt!).inSeconds < 60 ||
+                    second.any((value) => value == null || value <= 0) ||
+                    second[0]! <= second[1]!)) {
+              _toast(
+                t(
+                  'بعد ما تعدّي دقيقة، اكتب قراءة الضغط التانية كاملة.',
+                  'Wait one minute, then enter both values for the second reading.',
+                ),
+              );
+              return;
+            }
+            if (tracker.id == 'pressure' &&
+                readNumber(input['systolic']!)! <=
+                    readNumber(input['diastolic']!)!) {
+              _toast(
+                t(
+                  'راجع ترتيب الضغط الانقباضي والانبساطي.',
+                  'Check the order of the systolic and diastolic values.',
+                ),
+              );
               return;
             }
             redraw(() => working = true);
@@ -402,8 +482,26 @@ extension _Editors on _HomeState {
                 : {
                     'value': tracker.kind == 'bool'
                         ? boolValue
-                        : input['value']!.trim(),
+                        : (input['value'] ?? '').trim().isNotEmpty
+                        ? input['value']!.trim()
+                        : (moodChoices[moodTone] == null
+                              ? ''
+                              : t(
+                                  moodChoices[moodTone]!.$1,
+                                  moodChoices[moodTone]!.$2,
+                                )),
                   };
+            if (firstPressure != null) {
+              values['systolic'] =
+                  ((firstPressure!['systolic'] as double) + second[0]!) / 2;
+              values['diastolic'] =
+                  ((firstPressure!['diastolic'] as double) + second[1]!) / 2;
+            }
+            final originalValues = item?['values'] as Map?;
+            final originalSession = item?['pressureSession'];
+            final keepPressureSession =
+                values['systolic'] == originalValues?['systolic'] &&
+                values['diastolic'] == originalValues?['diastolic'];
             final success = await save((d) {
               final reminder =
                   occurrence ??
@@ -433,6 +531,29 @@ extension _Editors on _HomeState {
                 'zone': at.timeZoneName,
                 'note': note.trim(),
                 'context': contextValue,
+                if (tracker.id == 'mood')
+                  'moodTone': moodTone.isEmpty ? null : moodTone,
+                if (tracker.id == 'glucose') ...{
+                  'readingSource': readingSource.isEmpty ? null : readingSource,
+                  'mealMinutes': contextValue == 'after meal' ? minutes : null,
+                },
+                if (tracker.id == 'lab')
+                  'labDetails': labNumber == null
+                      ? null
+                      : {
+                          'result': labNumber,
+                          'unit': labUnit.trim(),
+                          'laboratory': laboratory.trim(),
+                          'reference': labRange.trim(),
+                        },
+                if (tracker.id == 'lab') 'labAttachment': labAttachment,
+                if (tracker.id == 'pressure')
+                  'pressureSession': firstPressure != null
+                      ? [
+                          firstPressure,
+                          {'systolic': second[0], 'diastolic': second[1]},
+                        ]
+                      : (keepPressureSession ? originalSession : null),
                 if (canPlan) 'planned': planned,
                 if (canPlan && at.isAfter(DateTime.now()))
                   'planCompletedAt': null,
@@ -474,14 +595,14 @@ extension _Editors on _HomeState {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.check_rounded),
-              label: Text(t('احفظ الإدخال', 'Save entry')),
+              label: Text(t('احفظ التسجيل', 'Save entry')),
             ),
             heading: AppBar(
               leading: const CloseButton(),
               title: Text(
                 item == null
                     ? t('تسجيل جديد', 'New entry')
-                    : t('تعديل الإدخال', 'Edit entry'),
+                    : t('عدّل التسجيل', 'Edit entry'),
               ),
               actions: [
                 if (item != null)
@@ -503,9 +624,9 @@ extension _Editors on _HomeState {
                         ? null
                         : () async {
                             if (!await _confirm(
-                              t('حذف الإدخال؟', 'Delete entry?'),
+                              t('تمسح التسجيل؟', 'Delete entry?'),
                               t(
-                                'هتتم إزالته من السجل والملخصات.',
+                                'التسجيل هيتشال من السجل والتقارير.',
                                 'It will be removed from your journal and summaries.',
                               ),
                               t('احذف', 'Delete'),
@@ -619,7 +740,9 @@ extension _Editors on _HomeState {
                             },
                             validator: (value) {
                               if (value == null || value.trim().isEmpty) {
-                                return field.optional
+                                return field.optional ||
+                                        tracker.id == 'mood' &&
+                                            moodChoices.containsKey(moodTone)
                                     ? null
                                     : t('اكتب قيمة', 'Enter a value');
                               }
@@ -685,6 +808,22 @@ extension _Editors on _HomeState {
                         ],
                       ),
                     ),
+                  if (tracker.id == 'mood') ...[
+                    const SizedBox(height: 8),
+                    Text(t('عامل إيه النهارده؟', 'How are you feeling today?')),
+                    Wrap(
+                      spacing: 7,
+                      children: [
+                        for (final choice in moodChoices.entries)
+                          FilterChip(
+                            label: Text(t(choice.value.$1, choice.value.$2)),
+                            selected: moodTone == choice.key,
+                            onSelected: (on) =>
+                                redraw(() => moodTone = on ? choice.key : ''),
+                          ),
+                      ],
+                    ),
+                  ],
                   if (tracker.id == 'glucose' || tracker.id == 'symptom') ...[
                     Text(
                       tracker.id == 'symptom'
@@ -715,6 +854,176 @@ extension _Editors on _HomeState {
                           ),
                       ],
                     ),
+                  ],
+                  if (tracker.id == 'glucose') ...[
+                    const SizedBox(height: 8),
+                    _choiceSetting(
+                      c,
+                      t('مصدر قياس السكر', 'Glucose reading source'),
+                      readingSource,
+                      [
+                        ('', t('غير محدد', 'Unspecified')),
+                        for (final key in readingSources.keys)
+                          if (key != 'health-connect' || readingSource == key)
+                            (key, readingSourceLabel(key, ar)),
+                      ],
+                      (value) => redraw(() => readingSource = value),
+                      icon: Icons.sensors_rounded,
+                    ),
+                    if (contextValue == 'after meal')
+                      TextFormField(
+                        initialValue: mealMinutes,
+                        maxLength: 4,
+                        keyboardType: TextInputType.number,
+                        decoration: InputDecoration(
+                          labelText: t(
+                            'الوقت بعد الوجبة بالدقايق',
+                            'Minutes after meal',
+                          ),
+                          counterText: '',
+                        ),
+                        onChanged: (value) => mealMinutes = value,
+                      ),
+                  ],
+                  if (tracker.id == 'pressure' && item == null)
+                    if (firstPressure == null)
+                      OutlinedButton.icon(
+                        onPressed: () {
+                          final systolic = readNumber(input['systolic'] ?? '');
+                          final diastolic = readNumber(
+                            input['diastolic'] ?? '',
+                          );
+                          if (systolic == null ||
+                              diastolic == null ||
+                              diastolic <= 0 ||
+                              systolic <= diastolic) {
+                            _toast(
+                              t(
+                                'كمّل القراءة الأولى.',
+                                'Enter both values for the first reading.',
+                              ),
+                            );
+                            return;
+                          }
+                          redraw(() {
+                            firstPressure = {
+                              'systolic': systolic,
+                              'diastolic': diastolic,
+                            };
+                            firstMeasuredAt = DateTime.now();
+                          });
+                        },
+                        icon: const Icon(Icons.timer_outlined),
+                        label: Text(
+                          t(
+                            'احفظ الأولى وابدأ مؤقت دقيقة',
+                            'Keep first reading and start one minute timer',
+                          ),
+                        ),
+                      )
+                    else ...[
+                      _PressureWait(firstMeasuredAt!),
+                      _careTextField(
+                        t('الانقباضي التاني', 'Second systolic'),
+                        secondSystolic,
+                        (v) => secondSystolic = v,
+                        numeric: true,
+                      ),
+                      _careTextField(
+                        t('الانبساطي التاني', 'Second diastolic'),
+                        secondDiastolic,
+                        (v) => secondDiastolic = v,
+                        numeric: true,
+                      ),
+                      TextButton(
+                        onPressed: () => redraw(() => firstPressure = null),
+                        child: Text(t('استخدم قراءة واحدة', 'Use one reading')),
+                      ),
+                    ],
+                  if (tracker.id == 'pressure' &&
+                      item?['pressureSession'] is List)
+                    Text(
+                      t(
+                        'القيم المعروضة هي متوسط الجلسة. تعديلها يدويًا يحفظها كقراءة واحدة.',
+                        'These are the session averages. Editing them saves a single reading.',
+                      ),
+                    ),
+                  if (tracker.id == 'lab') ...[
+                    const SizedBox(height: 8),
+                    SectionTitle(t('نتيجة المعمل', 'Lab result')),
+                    _careTextField(
+                      t(
+                        'النتيجة الرقمية (اختياري)',
+                        'Numeric result (optional)',
+                      ),
+                      labResult,
+                      (v) => labResult = v,
+                      numeric: true,
+                    ),
+                    _careTextField(
+                      t('الوحدة', 'Unit'),
+                      labUnit,
+                      (v) => labUnit = v,
+                    ),
+                    _careTextField(
+                      t('اسم المعمل', 'Laboratory'),
+                      laboratory,
+                      (v) => laboratory = v,
+                    ),
+                    _careTextField(
+                      t(
+                        'المدى المرجعي المكتوب في التقرير',
+                        'Reference range on the report',
+                      ),
+                      labRange,
+                      (v) => labRange = v,
+                    ),
+                    ControlCard(
+                      title: labAttachment == null
+                          ? t('أضف ملف التحليل', 'Attach a lab report')
+                          : t('شارك ملف التحليل', 'Share the attached report'),
+                      subtitle:
+                          labAttachment?['name'] as String? ??
+                          t(
+                            'صورة أو PDF حتى ٢ ميجابايت',
+                            'Image or PDF up to 2 MB',
+                          ),
+                      icon: Icons.attach_file_rounded,
+                      onTap: () async {
+                        final attached = labAttachment;
+                        if (attached != null) {
+                          final extension = attached['format'] as String;
+                          try {
+                            await shareBytes(
+                              base64Decode(attached['data']),
+                              'Yawmi-lab.$extension',
+                              extension == 'pdf'
+                                  ? 'application/pdf'
+                                  : extension == 'png'
+                                  ? 'image/png'
+                                  : 'image/jpeg',
+                            );
+                          } catch (_) {
+                            if (mounted)
+                              _toast(
+                                t(
+                                  'الملف ما اتشاركش. جرّب تاني.',
+                                  'Could not share the attachment.',
+                                ),
+                              );
+                          }
+                          return;
+                        }
+                        final next = await _pickLabAttachment();
+                        if (next != null && c.mounted)
+                          redraw(() => labAttachment = next);
+                      },
+                    ),
+                    if (labAttachment != null)
+                      TextButton(
+                        onPressed: () => redraw(() => labAttachment = null),
+                        child: Text(t('احذف المرفق', 'Remove attachment')),
+                      ),
                   ],
                   const SizedBox(height: 6),
                   ExpansionTile(
@@ -765,7 +1074,7 @@ extension _Editors on _HomeState {
                             '${prettyDate(at)} · ${clockText(at.hour * 60 + at.minute)}',
                           ),
                           subtitle: Text(
-                            t('وقت حدوث الإدخال', 'Time of entry'),
+                            t('وقت التسجيل الأصلي', 'Time of entry'),
                           ),
                           onTap: () async {
                             final today = DateTime.now();
@@ -816,13 +1125,24 @@ extension _Editors on _HomeState {
         'unit': unit,
         'note': note,
         'context': contextValue,
+        'moodTone': moodTone,
+        'readingSource': readingSource,
+        'mealMinutes': mealMinutes,
+        'labResult': labResult,
+        'labUnit': labUnit,
+        'laboratory': laboratory,
+        'labRange': labRange,
+        'labAttachment': labAttachment,
         'condition': linked,
       };
     }
     if (scheduleFollowUp && item != null && mounted) {
       final value = item['values']['value'];
+      final pending = pendingFollowUps(
+        data,
+      ).where((plan) => plan['sourceEntry'] == item['id']).firstOrNull;
       await _openFollowUp(
-        null,
+        pending?['id'] as String?,
         suggested: tracker,
         suggestedName: tracker.kind == 'text' && value is String
             ? value.length <= 100
@@ -830,6 +1150,7 @@ extension _Editors on _HomeState {
                   : tracker.name(ar)
             : tracker.name(ar),
         suggestedDate: isPlannedEntry(item) ? eventTime(item) : null,
+        sourceEntry: item['id'] as String?,
       );
     }
   }
@@ -1233,14 +1554,17 @@ extension _Editors on _HomeState {
                       days,
                     ),
                   SectionTitle(
-                    '${t('الإدخالات', 'Entries')} · ${recent.length}',
+                    '${t('التسجيلات', 'Entries')} · ${recent.length}',
                   ),
                   if (recent.isEmpty)
                     EmptyPanel(
                       Icons.insights,
-                      t('مفيش إدخالات في الفترة', 'No entries in this period'),
                       t(
-                        'سجّل إدخالًا أو غيّر فترة العرض.',
+                        'مفيش تسجيلات في الفترة دي',
+                        'No entries in this period',
+                      ),
+                      t(
+                        'سجّل حاجة أو غيّر الفترة.',
                         'Log a reading or change the date range.',
                       ),
                     ),

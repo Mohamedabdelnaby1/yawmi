@@ -4,8 +4,8 @@ extension _TrackerPreferences on _HomeState {
   String _modeName(String mode) => switch (mode) {
     'average' => t('متوسط القراءات', 'Average readings'),
     'total' => t('الإجمالي', 'Total'),
-    'count' => t('عدد الإدخالات', 'Entry count'),
-    _ => t('آخر إدخال', 'Latest entry'),
+    'count' => t('عدد التسجيلات', 'Entry count'),
+    _ => t('آخر تسجيل', 'Latest entry'),
   };
 
   Future<void> _trackerPreferences(Tracker tracker) async {
@@ -16,6 +16,7 @@ extension _TrackerPreferences on _HomeState {
         busy = false;
     var unit = displayUnit(data, tracker);
     var goal = (data['waterGoal'] as num?)?.toString() ?? '';
+    var waterMode = waterTrackingMode(data);
     final presets = waterCups(data).map((n) => n.toString()).toList();
     var defaultIndex = waterCups(data).indexOf(defaultWaterCup(data));
     final water = tracker.id == 'water';
@@ -76,7 +77,7 @@ extension _TrackerPreferences on _HomeState {
                                 (n) => n == null || n <= 0 || n > 10000,
                               ) ||
                               volumes.toSet().length != volumes.length ||
-                              goal.trim().isNotEmpty &&
+                              waterMode != 'log' &&
                                   (target == null || target <= 0))) {
                         _toast(
                           t(
@@ -99,7 +100,15 @@ extension _TrackerPreferences on _HomeState {
                           final sizes = volumes.cast<int>();
                           d['waterCups'] = sizes;
                           d['waterDefaultCup'] = sizes[defaultIndex];
-                          d['waterGoal'] = target;
+                          d['waterMode'] = waterMode;
+                          d['waterGoal'] = waterMode == 'log' ? null : target;
+                          if (waterMode == 'limit' &&
+                              d['waterReminder'] is Map) {
+                            d['waterReminder'] = {
+                              ...d['waterReminder'],
+                              'enabled': false,
+                            };
+                          }
                         }
                       });
                       if (!c.mounted) return;
@@ -107,7 +116,7 @@ extension _TrackerPreferences on _HomeState {
                         Navigator.pop(c);
                         _toast(
                           t(
-                            'اتحفظت إعدادات المتابعة',
+                            'إعدادات المتابعة اتحفظت',
                             'Tracker settings saved',
                           ),
                         );
@@ -223,7 +232,7 @@ extension _TrackerPreferences on _HomeState {
                         mode == 'average'
                             ? t('أظهر عدد القراءات', 'Show number of readings')
                             : t(
-                                'أظهر تاريخ آخر إدخال',
+                                'أظهر تاريخ آخر تسجيل',
                                 'Show latest entry date',
                               ),
                       ),
@@ -246,28 +255,39 @@ extension _TrackerPreferences on _HomeState {
                     SectionTitle(
                       t('هدف اليوم وأحجام الأكواب', 'Daily goal and cup sizes'),
                     ),
-                    TextFormField(
-                      initialValue: goal,
-                      onChanged: (value) => goal = value,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration: InputDecoration(
-                        labelText: t(
-                          'هدفك اليومي (مل) · اختياري',
-                          'Your daily goal (mL) · optional',
-                        ),
-                      ),
-                      validator: (value) =>
-                          value == null ||
-                              value.trim().isEmpty ||
-                              (readNumber(value) ?? 0) > 0
-                          ? null
-                          : t(
-                              'اكتب قيمة أكبر من صفر',
-                              'Enter a value above zero',
-                            ),
+                    selector(
+                      t('طريقة متابعة المياه', 'Water tracking mode'),
+                      waterMode,
+                      [
+                        ('log', t('تسجيل فقط', 'Log only')),
+                        ('goal', t('هدف يومي', 'Daily goal')),
+                        ('limit', t('حد يومي للسوائل', 'Daily fluid limit')),
+                      ],
+                      (value) => waterMode = value,
                     ),
+                    if (waterMode != 'log')
+                      TextFormField(
+                        initialValue: goal,
+                        onChanged: (value) => goal = value,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: InputDecoration(
+                          labelText: t(
+                            'هدفك اليومي (مل) · اختياري',
+                            'Daily amount (mL)',
+                          ),
+                        ),
+                        validator: (value) =>
+                            value == null ||
+                                value.trim().isEmpty ||
+                                (readNumber(value) ?? 0) > 0
+                            ? null
+                            : t(
+                                'اكتب قيمة أكبر من صفر',
+                                'Enter a value above zero',
+                              ),
+                      ),
                     const SizedBox(height: 9),
                     for (final (i, preset) in presets.indexed)
                       Padding(

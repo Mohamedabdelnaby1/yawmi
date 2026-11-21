@@ -370,7 +370,7 @@ extension _Screens on _HomeState {
               if (recent.isEmpty)
                 EmptyPanel(
                   Icons.history,
-                  t('مفيش إدخالات في اليوم ده', 'No entries for this day'),
+                  t('مفيش تسجيلات في اليوم ده', 'No entries for this day'),
                   '',
                 ),
               for (final row in recent)
@@ -388,6 +388,7 @@ extension _Screens on _HomeState {
           current,
           recent.length,
           hasMedicine ? pending.length : null,
+          hasLate: first != null && now.difference(first.at).inMinutes > 0,
         ),
         const SizedBox(height: 9),
         _dateTrack(date),
@@ -433,7 +434,7 @@ extension _Screens on _HomeState {
             labels: [
               current
                   ? t('متابعاتي', 'My tracking')
-                  : t('الإدخالات', 'Entries'),
+                  : t('التسجيلات', 'Entries'),
               t('الجرعات', 'Doses'),
             ],
             index: section,
@@ -1170,7 +1171,7 @@ extension _Screens on _HomeState {
               Icons.history,
               t('السجل فاضي هنا', 'No matching entries'),
               t(
-                'سجّل إدخال أو جرّب فلتر مختلف.',
+                'سجّل حاجة أو غيّر الفلتر.',
                 'Log an entry or choose a different filter.',
               ),
             ),
@@ -1332,7 +1333,7 @@ extension _Screens on _HomeState {
                 const SizedBox(height: 8),
                 _choiceSetting(
                   c,
-                  t('نوع الإدخال', 'Entry type'),
+                  t('نوع التسجيل', 'Entry type'),
                   kind,
                   [
                     ('', t('جميع الأنواع', 'All types')),

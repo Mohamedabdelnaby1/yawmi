@@ -108,6 +108,20 @@ List<JournalRow> notificationRules(
           route: "expiry/${med['id']}",
           now: now,
         ),
+      for (final pack in rows(med['packs']))
+        if ((pack['count'] as num) > 0)
+          if (DateAlert.read(pack['expiry']) case final expiry?)
+            ...dateAlertRules(
+              expiry,
+              id: "expiry:${med['id']}:${pack['id']}",
+              title: tr(
+                ar,
+                'راجع صلاحية عبوة دواء في يومي',
+                'Check a package expiry in Yawmi',
+              ),
+              route: "packs/${med['id']}",
+              now: now,
+            ),
     ],
     for (final followUp in pendingFollowUps(state))
       if (DateAlert.read(followUp['alert']) case final alert?)
@@ -446,7 +460,7 @@ extension _Routine on _HomeState {
         ? ice
         : honey;
     final text = recorded
-        ? t('تم التسجيل', 'Taken')
+        ? t('اتسجّل', 'Taken')
         : status == 'skipped'
         ? t('متخطّية', 'Skipped')
         : dose.time.isAfter(now)
@@ -660,7 +674,7 @@ extension _Routine on _HomeState {
                   if (reading == null)
                     Text(
                       t(
-                        'تعذّر قراءة حالة التنبيهات.',
+                        'ماقدرناش نعرض حالة التنبيهات. جرّب تاني.',
                         'Could not read notification status.',
                       ),
                     )
@@ -944,6 +958,8 @@ extension _Routine on _HomeState {
     var name = existing?['name'] as String? ?? '';
     var directions = existing?['directions'] as String? ?? '';
     var amount = existing?['amount'] as String? ?? '';
+    var strength = existing?['strength'] as String? ?? '';
+    var administration = existing?['administration'] as String? ?? '';
     final times = ints(existing?['times']).toSet();
     final meals = readDoseMeals(existing?['mealSlots'], times);
     final days = ints(existing?['days'] ?? allDays).toSet();
@@ -1010,6 +1026,19 @@ extension _Routine on _HomeState {
                   ),
                 ),
                 const SizedBox(height: 9),
+                _careTextField(
+                  t(
+                    'تركيز الدواء حسب العبوة',
+                    'Strength as written on the package',
+                  ),
+                  strength,
+                  (value) => strength = value,
+                ),
+                _careTextField(
+                  t('طريقة الاستخدام', 'Route of administration'),
+                  administration,
+                  (value) => administration = value,
+                ),
                 TextFormField(
                   initialValue: directions,
                   maxLength: 600,
@@ -1230,13 +1259,37 @@ extension _Routine on _HomeState {
                               existing['start'] != dayKey(start) ||
                               existing['end'] !=
                                   (end == null ? null : dayKey(end!));
+                          final medicationChanged =
+                              existing != null &&
+                              (existing['amount'] != amount.trim() ||
+                                  (existing['strength'] ?? '') !=
+                                      strength.trim() ||
+                                  (existing['administration'] ?? '') !=
+                                      administration.trim());
                           final saved = await save((d) {
+                            final changedAt = DateTime.now()
+                                .toUtc()
+                                .toIso8601String();
                             upsert(d, 'meds', {
                               ...?existing,
                               'id': id,
                               'name': name.trim(),
                               'directions': directions.trim(),
                               'amount': amount.trim(),
+                              'strength': strength.trim(),
+                              'administration': administration.trim(),
+                              if (medicationChanged)
+                                'changes': [
+                                  {
+                                    'at': changedAt,
+                                    'previous':
+                                        (existing['amount'] as String?) ?? '',
+                                    'dose': amount.trim(),
+                                    'strength': strength.trim(),
+                                    'administration': administration.trim(),
+                                  },
+                                  ...rows(existing['changes']).take(49),
+                                ],
                               'links': links.toList(),
                               'times': scheduleTimes,
                               'mealSlots': readDoseMeals(meals, scheduleTimes),
@@ -1468,6 +1521,8 @@ extension _Routine on _HomeState {
                 _stockCard(med),
                 const SizedBox(height: 8),
                 _expiryCard(med),
+                const SizedBox(height: 8),
+                _packsCard(med),
                 const SizedBox(height: 10),
               ],
               if (med['legacySchedule'] case final Map schedule)
@@ -1557,6 +1612,8 @@ extension _Routine on _HomeState {
         'medicine': med['id'],
         'name': med['name'],
         'amount': med['amount'],
+        'strength': med['strength'],
+        'administration': med['administration'],
         'status': status,
         'at': stamp.toUtc().toIso8601String(),
         'editToken': token,

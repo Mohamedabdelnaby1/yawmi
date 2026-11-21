@@ -27,6 +27,19 @@ class MainActivity : FlutterActivity() {
             try {
                 when (call.method) {
                     "takeRoute" -> { result.success(route); route = null }
+                    "healthStatus" -> result.success(mapOf(
+                        "available" to (Build.VERSION.SDK_INT >= 34 && YawmiHealthConnect.available(this)),
+                        "granted" to healthGranted(this),
+                    ))
+                    "healthSettings" -> {
+                        if (Build.VERSION.SDK_INT >= 34) YawmiHealthConnect.openPermissions(this)
+                        result.success(null)
+                    }
+                    "healthRead" -> {
+                        val types = call.arguments<List<String>>() ?: emptyList()
+                        if (Build.VERSION.SDK_INT >= 34) YawmiHealthConnect.read(this, types, result)
+                        else result.error("healthUnavailable", "Health Connect is unavailable", null)
+                    }
                     "openUpdates" -> {
                         YawmiUpdates.onOpen(applicationContext, call.arguments == true)
                         result.success(YawmiUpdates.status(applicationContext))
@@ -120,7 +133,10 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun routeFrom(intent: Intent?): String? =
-        if (intent?.action == "app.yawmi.OPEN" && intent.getStringExtra("token") == shortcutToken(this)) {
+        if (intent?.action == Intent.ACTION_VIEW_PERMISSION_USAGE &&
+            intent.hasCategory("android.intent.category.HEALTH_PERMISSIONS")) {
+            "privacy"
+        } else if (intent?.action == "app.yawmi.OPEN" && intent.getStringExtra("token") == shortcutToken(this)) {
             intent.getStringExtra("route")
         } else null
 

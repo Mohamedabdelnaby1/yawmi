@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'domain.dart';
+import 'care_data.dart';
 
 const repeatIntervals = [10, 15, 20, 30, 45, 60];
 const waterIntervals = [30, 45, 60, 90, 120, 150, 180, 240];
@@ -74,6 +75,7 @@ List<JournalRow> trackingSchedules(JournalRow state, bool ar) {
   final water = state['waterReminder'];
   final slots =
       water is Map &&
+          waterTrackingMode(state) != 'limit' &&
           water['enabled'] == true &&
           water['wake'] is int &&
           water['sleep'] is int &&

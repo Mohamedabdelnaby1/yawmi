@@ -34,7 +34,7 @@
 - **Expiry and follow-ups.** Record a medication expiry date, plan a repeat lab test or visit, and select advance alerts, their time, and repeats. Completing a follow-up clears its remaining alerts.
 - **Flexible reminders.** Schedule water reminders during waking hours, set quiet hours, and test Android notification delivery from the app.
 - **Home-screen widgets.** Pick the cards, clock, date, and shortcuts that appear on each widget.
-- **Languages and data.** Arabic and English with light and dark modes. Journal data stays on your device. Export PDF or CSV, or create an encrypted backup.
+- **Languages and data.** Arabic and English with light and dark modes. Journal data stays on your device. Export PDF or Excel (XLSX), or create an encrypted backup.
 
 The screenshots use sample data. Yawmi is a personal logging and reminder tool.
 
@@ -59,7 +59,8 @@ Requires Android 8 or later. Android may ask for permission to install the APK f
 3. **Routine.** Set dose times and meal timing. Open the medicine cabinet for stock and expiry, or Upcoming follow-ups to plan a lab retest, visit, or custom reminder.
 4. **Reminders.** Open the bell on Today to manage measurement, medication, and hydration alerts. Set hours of quiet, test Android delivery, or review adaptive routine suggestions in Routine.
 5. **Widgets.** In Widget Studio, open an installed widget and choose Appearance. Set the widget language, clock digits, date language, and 12- or 24-hour format. Save to apply your choices on the home screen. Privacy controls what data appears there.
-6. **Data.** Export a CSV or PDF, or save a password-protected backup. The import center restores a Yawmi backup or lets you preview CSV readings before adding them.
+6. **Data.** Export Excel or PDF, or save a password-protected backup. The import center restores a Yawmi backup or lets you preview CSV readings before adding them.
+7. **My care.** Review weekly journal patterns, a personal care plan, and recorded allergies. Share a one-page clinician handoff with trends and an optional journal appendix. Import glucose and blood pressure from Health Connect on Android 14 or later after granting access.
 
 ### In-app updates
 

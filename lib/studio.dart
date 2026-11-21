@@ -430,7 +430,7 @@ extension _Studio on _HomeState {
         if (prefs['layoutUndo'] is List)
           ListTile(
             subtitle: Text(
-              t('تم تقديم بطاقة ', 'Moved up ') +
+              t('اتقدّمت بطاقة ', 'Moved up ') +
                   cardName(data, prefs['layoutChanged'] as String? ?? '', ar),
             ),
             trailing: TextButton(
@@ -762,7 +762,7 @@ extension _Studio on _HomeState {
                   leading: const Icon(Icons.warning_amber),
                   title: Text(
                     t(
-                      'تعذّر تحديث الويدجت. افتح التركيبة واضغط «احفظ» لإعادة المحاولة.',
+                      'الويدجت ما اتحدّثش. افتح تصميمه واضغط «احفظ» تاني.',
                       'The widget could not refresh. Open the layout and save it to retry.',
                     ),
                   ),
@@ -1033,7 +1033,7 @@ extension _Studio on _HomeState {
               if (c.mounted)
                 _toast(
                   t(
-                    'اتحفظ التصميم، وتعذّر تحديث الويدجت على الشاشة الرئيسية.',
+                    'التصميم اتحفظ. افتحه واضغط «احفظ» تاني عشان يظهر على الشاشة الرئيسية.',
                     'The layout was saved, but the home-screen widget could not update.',
                   ),
                 );
@@ -1699,7 +1699,7 @@ extension _Studio on _HomeState {
                             'Use only this condition’s data',
                           ),
                           subtitle: t(
-                            'يحسب القيم من الإدخالات المرتبطة بالحالة.',
+                            'بيعرض أرقام التسجيلات اللي ربطتها بالحالة دي.',
                             'Summarizes entries linked to the condition.',
                           ),
                           icon: Icons.filter_alt_outlined,
@@ -2173,7 +2173,7 @@ extension _Studio on _HomeState {
                   title: Text(
                     id == medicineCard
                         ? t('إظهار اسم الدواء', 'Show medication name')
-                        : t('إظهار وصف القيمة', 'Show value description'),
+                        : t('اعرض وصف الرقم', 'Show value description'),
                   ),
                   value: draft['context'] != false,
                   onChanged: (on) => redraw(() => draft['context'] = on),
@@ -2361,7 +2361,18 @@ extension _Studio on _HomeState {
         ),
         SectionTitle(t('الخصوصية والبيانات', 'Privacy & data')),
         ControlCard(
-          title: t('إعادة فتح الإعداد الأول', 'Reopen setup'),
+          title: t('متابعتي', 'My care'),
+          subtitle: t(
+            'ملخص أسبوعي، خطة الطبيب، والحساسية.',
+            'Weekly insights, care plan, and allergies.',
+          ),
+          icon: Icons.insights_rounded,
+          tonalColor: mint,
+          onTap: _careCenter,
+        ),
+        const SizedBox(height: 8),
+        ControlCard(
+          title: t('ارجع لإعداد يومي', 'Reopen setup'),
           icon: Icons.replay_rounded,
           onTap: () => save((d) => d['stage'] = 1),
         ),
@@ -2432,7 +2443,7 @@ extension _Studio on _HomeState {
       if (mounted)
         _toast(
           t(
-            'تعذّر حذف ملفات المشاركة المؤقتة',
+            'ملفات المشاركة المؤقتة ما اتمسحتش',
             'Could not clear temporary share files',
           ),
         );

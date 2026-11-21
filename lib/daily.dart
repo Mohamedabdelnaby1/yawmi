@@ -216,15 +216,14 @@ extension _Daily on _HomeState {
       ? Icons.notifications_none_rounded
       : glyph(item.tracker);
 
-  String _agendaStatus(AgendaItem item) {
-    if (item.at.isAfter(now)) return t('الموعد الجاي', 'Coming up');
-    if (item.at.isBefore(
-      DateTime(now.year, now.month, now.day, now.hour, now.minute),
-    )) {
-      return t('فات الموعد ولسه ما اتسجّلش', 'Time passed · awaiting entry');
-    }
-    return t('موعد دلوقتي', 'Due now');
-  }
+  String _agendaStatus(AgendaItem item) => agendaCopy(
+    ar,
+    item.at,
+    now,
+    dose: item.kind == AgendaKind.dose,
+    visit:
+        item.kind == AgendaKind.followUp || item.kind == AgendaKind.appointment,
+  );
 
   Future<void> _openAgendaItem(AgendaItem item) async {
     final today = dayKey(item.at) == dayKey(DateTime.now());

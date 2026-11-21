@@ -607,7 +607,12 @@ extension _AboutPage on _HomeState {
                   );
                 } catch (_) {
                   if (c.mounted) {
-                    _toast(t('تعذّر فتح الرابط', 'Could not open the link'));
+                    _toast(
+                      t(
+                        'الرابط ما فتحش. جرّب تاني.',
+                        'Could not open the link',
+                      ),
+                    );
                   }
                 }
               },

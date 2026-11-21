@@ -11,11 +11,15 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:share_plus/share_plus.dart';
 
 import 'csv_table.dart';
+import 'care_data.dart';
+import 'app_copy.dart';
 import 'dated_alerts.dart';
 import 'design.dart';
 import 'domain.dart';
 import 'reminder_schedule.dart';
 import 'widgets.dart' show restoreWidgetDesigns;
+
+part 'journal_pdf.dart';
 
 const maxBackupBytes = 20 * 1024 * 1024;
 const _backupMagic = 'yawmi/backup/1';
@@ -162,6 +166,61 @@ JournalRow _validate(JournalRow raw) {
     require(e['planned'] == null || e['planned'] is bool);
     require(e['planCompletedAt'] == null || stamp(e['planCompletedAt']));
     require(e['reminderOccurrence'] == null || text(e['reminderOccurrence']));
+    require(e['sourceRecordId'] == null || text(e['sourceRecordId']));
+    require(
+      e['moodTone'] == null ||
+          t.id == 'mood' && moodChoices.containsKey(e['moodTone']),
+    );
+    require(
+      e['readingSource'] == null ||
+          readingSources.containsKey(e['readingSource']),
+    );
+    require(
+      e['mealMinutes'] == null ||
+          e['mealMinutes'] is int &&
+              (e['mealMinutes'] as int) >= 0 &&
+              (e['mealMinutes'] as int) <= 1440,
+    );
+    require(
+      e['labDetails'] == null ||
+          t.id == 'lab' && readLabDetails(e['labDetails']) != null,
+    );
+    if (e['labAttachment'] case final Map attachment) {
+      final encoded = attachment['data'];
+      require(
+        t.id == 'lab' &&
+            text(attachment['name']) &&
+            encoded is String &&
+            encoded.length <= ((maxLabAttachmentBytes + 2) ~/ 3) * 4,
+      );
+      final bytes = base64Decode(encoded as String);
+      final mime = labAttachmentFormat(bytes);
+      require(
+        bytes.length <= maxLabAttachmentBytes &&
+            mime != null &&
+            mime == attachment['format'],
+      );
+    } else {
+      require(e['labAttachment'] == null);
+    }
+    if (e['pressureSession'] case final List pair) {
+      require(
+        t.id == 'pressure' &&
+            pair.length == 2 &&
+            pair.every(
+              (p) =>
+                  p is Map &&
+                  ['systolic', 'diastolic'].every(
+                    (key) =>
+                        p[key] is num &&
+                        (p[key] as num).isFinite &&
+                        (p[key] as num) > 0,
+                  ),
+            ),
+      );
+    } else {
+      require(e['pressureSession'] == null);
+    }
     require(
       rows(e['conditions']).every((c) => text(c['id']) && text(c['name'])),
     );
@@ -178,9 +237,27 @@ JournalRow _validate(JournalRow raw) {
           (m['times'] as List).every(slot) &&
           scheduleDays(m['days']) &&
           (m['amount'] == null || text(m['amount'])) &&
+          (m['strength'] == null || text(m['strength'])) &&
+          (m['administration'] == null || text(m['administration'])) &&
           (m['directions'] == null || text(m['directions'])),
     );
     strings(m['links']);
+    if (m['changes'] != null) {
+      require(
+        m['changes'] is List &&
+            (m['changes'] as List).length <= 50 &&
+            rows(m['changes']).every(
+              (r) =>
+                  stamp(r['at']) &&
+                  [
+                    'previous',
+                    'dose',
+                    'strength',
+                    'administration',
+                  ].every((key) => text(r[key])),
+            ),
+      );
+    }
     if (m.containsKey('mealSlots')) {
       m['mealSlots'] = readDoseMeals(m['mealSlots'], ints(m['times']));
     }
@@ -194,6 +271,28 @@ JournalRow _validate(JournalRow raw) {
       require(alert != null);
       m['expiry'] = alert!.toRow(pause: true);
     }
+    if (m['packs'] != null) {
+      final packs = rows(m['packs']);
+      require(
+        packs.length <= 30 &&
+            packs.map((p) => p['id']).toSet().length == packs.length,
+      );
+      for (final pack in packs) {
+        final alert = DateAlert.read(pack['expiry']);
+        final count = pack['count'];
+        require(
+          text(pack['id']) &&
+              text(pack['name']) &&
+              count is num &&
+              count.isFinite &&
+              count >= 0 &&
+              count <= 100000000 &&
+              alert != null,
+        );
+        pack['expiry'] = alert!.toRow(pause: true);
+      }
+      m['packs'] = packs;
+    }
   }
   final followUps = rows(clean['followUps']);
   for (final plan in followUps) {
@@ -203,6 +302,7 @@ JournalRow _validate(JournalRow raw) {
           (plan['name'] as String).trim().isNotEmpty &&
           (plan['name'] as String).length <= 100 &&
           (plan['tracker'] == null || text(plan['tracker'])) &&
+          (plan['sourceEntry'] == null || text(plan['sourceEntry'])) &&
           (plan['completedAt'] == null || stamp(plan['completedAt'])) &&
           alert != null,
     );
@@ -318,6 +418,27 @@ JournalRow _validate(JournalRow raw) {
   }
   if (raw['waterGoal'] case final num n when n.isFinite && n > 0) {
     clean['waterGoal'] = n;
+  }
+  if (['log', 'goal', 'limit'].contains(raw['waterMode']))
+    clean['waterMode'] = raw['waterMode'];
+  if (text(raw['allergyNotes'])) clean['allergyNotes'] = raw['allergyNotes'];
+  if (raw['carePlans'] case final Map plans) {
+    clean['carePlans'] = {
+      for (final plan in plans.entries)
+        if (plan.key is String &&
+            plan.value is Map &&
+            [
+              'measure',
+              'timing',
+              'target',
+            ].every((key) => text(plan.value[key])) &&
+            (plan.value['review'] == null ||
+                parseCalendarDate(plan.value['review']) != null))
+          plan.key: {
+            for (final key in ['measure', 'timing', 'target', 'review'])
+              if (plan.value[key] != null) key: plan.value[key],
+          },
+    };
   }
   clean['glucoseAverage'] = raw['glucoseAverage'] == true;
   final savedViews = raw['trackerViews'];
@@ -510,109 +631,19 @@ List<JournalRow> newCsvEntries(
 String reportValue(JournalRow e, bool ar) => e['tracker'] == medicineCard
     ? tr(
         ar,
-        e['status'] == 'taken' ? 'تم التسجيل' : 'تم التخطي',
+        e['status'] == 'taken' ? 'اتسجّل' : 'اتخطّى',
         e['status'] == 'taken' ? 'Taken' : 'Skipped',
       )
     : [
         valueText(e, ar),
-        e['unit'] as String? ?? '',
+        if (readLabDetails(e['labDetails']) case final lab?) ...[
+          number((lab['result'] as num).toDouble()),
+          lab['unit'] as String,
+        ] else
+          e['unit'] as String? ?? '',
         if (e['legacyCarbs'] case final num grams)
           number(grams.toDouble()) + tr(ar, ' غ كربوهيدرات', ' g carbs'),
       ].where((s) => s.isNotEmpty).join(' ');
-
-Future<Uint8List> makePdf(
-  JournalRow state,
-  List<JournalRow> entries,
-  bool ar,
-  String range, {
-  required bool notes,
-}) async {
-  final base = pw.Font.ttf(await rootBundle.load('assets/Tajawal-Regular.ttf'));
-  final bold = pw.Font.ttf(await rootBundle.load('assets/Tajawal-Bold.ttf'));
-  final doc = pw.Document(
-    theme: pw.ThemeData.withFont(base: base, bold: bold),
-  );
-  final direction = ar ? pw.TextDirection.rtl : pw.TextDirection.ltr;
-  doc.addPage(
-    pw.MultiPage(
-      pageFormat: PdfPageFormat.a4,
-      textDirection: direction,
-      margin: const pw.EdgeInsets.all(37),
-      maxPages: 1000,
-      header: (_) => pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-        children: [
-          pw.Text(
-            tr(ar, 'يومي | تقرير السجل', 'Yawmi | Journal report'),
-            textDirection: direction,
-            style: pw.TextStyle(
-              color: PdfColor.fromHex('#172431'),
-              fontWeight: pw.FontWeight.bold,
-              fontSize: 21,
-            ),
-          ),
-          pw.Text(range, textDirection: pw.TextDirection.ltr),
-          pw.SizedBox(height: 9),
-        ],
-      ),
-      footer: (c) => pw.Align(
-        alignment: pw.Alignment.center,
-        child: pw.Text('${c.pageNumber} / ${c.pagesCount}'),
-      ),
-      build: (_) => [
-        pw.Text(
-          '${tr(ar, 'عدد الإدخالات', 'Number of entries')} · ${entries.length}',
-          textDirection: direction,
-        ),
-        pw.SizedBox(height: 7),
-        for (final e in entries)
-          pw.Container(
-            padding: const pw.EdgeInsets.symmetric(vertical: 7),
-            decoration: const pw.BoxDecoration(
-              border: pw.Border(
-                bottom: pw.BorderSide(color: PdfColors.grey300, width: .5),
-              ),
-            ),
-            child: pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-              children: [
-                pw.Text(
-                  e['tracker'] == medicineCard
-                      ? e['name']
-                      : cardName(state, e['tracker'], ar),
-                  textDirection: direction,
-                  style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-                ),
-                pw.Text(
-                  e['legacyUndated'] == true
-                      ? tr(ar, 'مستورد من غير تاريخ', 'Imported without a date')
-                      : '${dayKey(eventTime(e))} · ${clockText(eventTime(e).hour * 60 + eventTime(e).minute)}',
-                  textDirection: e['legacyUndated'] == true
-                      ? direction
-                      : pw.TextDirection.ltr,
-                ),
-                pw.Text(reportValue(e, ar), textDirection: direction),
-                if (entryContext(e['context'], ar).isNotEmpty)
-                  pw.Text(
-                    entryContext(e['context'], ar),
-                    textDirection: direction,
-                  ),
-                if (notes &&
-                    e['note'] is String &&
-                    (e['note'] as String).isNotEmpty)
-                  pw.Text(
-                    e['note'],
-                    textDirection: direction,
-                    style: const pw.TextStyle(fontSize: 10),
-                  ),
-              ],
-            ),
-          ),
-      ],
-    ),
-  );
-  return doc.save();
-}
 
 typedef VisitGroup = ({String id, String title, String detail, int count});
 
@@ -636,9 +667,9 @@ List<VisitGroup> visitSummary(
           title: cardName(state, group.key, ar),
           count: group.value.length,
           detail:
-              "${tr(ar, 'تم التسجيل', 'Taken')} "
+              "${tr(ar, 'اتسجّل', 'Taken')} "
               "${group.value.where((row) => row['status'] == 'taken').length} · "
-              "${tr(ar, 'تم التخطي', 'Skipped')} "
+              "${tr(ar, 'اتخطّى', 'Skipped')} "
               "${group.value.where((row) => row['status'] == 'skipped').length}",
         )
       else
@@ -647,7 +678,7 @@ List<VisitGroup> visitSummary(
           title: cardName(state, group.key, ar),
           count: group.value.length,
           detail: trackerFor(state, group.key)?.kind == 'number'
-              ? _visitLatest(group.value, ar)
+              ? _visitTrend(state, group.key, group.value, ar)
               : tr(ar, 'إدخالات خلال الفترة', 'Entries during the period'),
         ),
     if (sorted.length > limit)
@@ -672,73 +703,19 @@ String _visitLatest(List<JournalRow> entries, bool ar) {
   return '$value · ${dayKey(eventTime(last))}';
 }
 
-Future<Uint8List> makeVisitSummaryPdf(
+String _visitTrend(
   JournalRow state,
+  String id,
   List<JournalRow> entries,
   bool ar,
-  String range,
-) async {
-  final regular = pw.Font.ttf(
-    await rootBundle.load('assets/Tajawal-Regular.ttf'),
-  );
-  final bold = pw.Font.ttf(await rootBundle.load('assets/Tajawal-Bold.ttf'));
-  final groups = visitSummary(state, entries, ar);
-  final doc = pw.Document(
-    theme: pw.ThemeData.withFont(base: regular, bold: bold),
-  );
-  doc.addPage(
-    pw.Page(
-      pageFormat: PdfPageFormat.a4,
-      margin: const pw.EdgeInsets.all(36),
-      textDirection: ar ? pw.TextDirection.rtl : pw.TextDirection.ltr,
-      build: (_) => pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-        children: [
-          pw.Text(
-            tr(ar, 'ملخّص زيارة · يومي', 'Visit summary · Yawmi'),
-            style: pw.TextStyle(font: bold, fontSize: 24),
-          ),
-          pw.SizedBox(height: 9),
-          pw.Text('$range  ·  ${entries.length} ${tr(ar, 'إدخال', 'entries')}'),
-          pw.SizedBox(height: 18),
-          for (final group in groups)
-            pw.Container(
-              height: 56,
-              padding: const pw.EdgeInsets.fromLTRB(10, 7, 10, 7),
-              decoration: const pw.BoxDecoration(
-                border: pw.Border(
-                  bottom: pw.BorderSide(color: PdfColors.grey400),
-                ),
-              ),
-              child: pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-                children: [
-                  pw.Text(
-                    '${group.title}  ·  ${group.count}',
-                    maxLines: 1,
-                    style: pw.TextStyle(font: bold, fontSize: 14),
-                  ),
-                  pw.Text(
-                    group.detail,
-                    maxLines: 1,
-                    style: const pw.TextStyle(fontSize: 11),
-                  ),
-                ],
-              ),
-            ),
-          pw.SizedBox(height: 12),
-          pw.Text(
-            tr(
-              ar,
-              'الملخّص مبني على إدخالات السجل المختارة.',
-              'Summary based on the selected journal entries.',
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-  return doc.save();
+) {
+  final trend = careTrend(state, id, entries);
+  if (trend == null) return _visitLatest(entries, ar);
+  final secondary = trend.secondaryMean;
+  final mean = secondary == null
+      ? number(trend.mean)
+      : '${number(trend.mean)} / ${number(secondary)}';
+  return '${tr(ar, 'متوسط', 'Mean')} $mean ${trend.unit} · ${trend.count} ${tr(ar, 'قراءة', 'readings')} · ${trend.days} ${tr(ar, 'يوم', 'days')}';
 }
 
 Future<Directory> _shareDirectory() async => Directory.fromUri(

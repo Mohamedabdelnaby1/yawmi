@@ -108,7 +108,7 @@ CardSummary summaryFor(
           : tr(ar, 'إجمالي آخر ', 'Total · ') + summaryPeriod(view.days, ar),
     'average' => tr(ar, 'متوسط ', 'Average · ') + summaryPeriod(view.days, ar),
     'count' =>
-      tr(ar, 'عدد الإدخالات · ', 'Entry count · ') +
+      tr(ar, 'عدد التسجيلات · ', 'Entry count · ') +
           summaryPeriod(view.days, ar),
     _ => tr(ar, 'آخر قراءة', 'Latest reading'),
   };

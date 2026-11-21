@@ -158,7 +158,7 @@ class _UpdateCenterState extends State<YawmiUpdateCenter>
               title: Text(t('فحص التحديثات تلقائيًا', 'Check automatically')),
               subtitle: Text(
                 t(
-                  'يفحص يومي الإصدارات عند الفتح ودوريًا في الخلفية.',
+                  'يومي بيشوف لو فيه إصدار جديد لما تفتحه، وبيفحص من وقت للتاني.',
                   'Yawmi checks on launch and periodically in the background.',
                 ),
               ),
@@ -175,10 +175,10 @@ class _UpdateCenterState extends State<YawmiUpdateCenter>
             Text(
               _downloading
                   ? t(
-                      'جاري تنزيل التحديث · $progress٪',
+                      'بننزّل التحديث · $progress٪',
                       'Downloading update · $progress%',
                     )
-                  : t('جاري فحص الإصدارات…', 'Checking for updates…'),
+                  : t('بنفحص لو فيه تحديث…', 'Checking for updates…'),
             ),
             const SizedBox(height: 8),
             LinearProgressIndicator(
@@ -199,7 +199,7 @@ class _UpdateCenterState extends State<YawmiUpdateCenter>
                 'The download stopped. Check your connection and storage, then retry.',
               ),
               _ => t(
-                'تعذّر الاتصال بإصدارات GitHub. جرّب تاني.',
+                'ماقدرناش نفحص التحديثات على GitHub. راجع النت وجرّب تاني.',
                 'Could not reach GitHub releases. Try again.',
               ),
             }, style: TextStyle(color: Theme.of(context).colorScheme.error)),

@@ -14,6 +14,9 @@ import 'catalog.dart';
 import 'design.dart';
 import 'domain.dart';
 import 'dated_alerts.dart';
+import 'care_data.dart';
+import 'app_copy.dart';
+import 'excel_export.dart';
 import 'reminder_schedule.dart';
 import 'store.dart';
 import 'transfer.dart';
@@ -35,6 +38,7 @@ part 'stock.dart';
 part 'follow_ups.dart';
 part 'notifications.dart';
 part 'updates.dart';
+part 'care_ui.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -57,7 +61,7 @@ void main() {
                       child: Text(
                         tr(
                           Localizations.localeOf(c).languageCode == 'ar',
-                          'تعذّر فتح سجل يومي',
+                          'ماقدرناش نفتح سجل يومي',
                           'Could not open your Yawmi journal',
                         ),
                       ),
@@ -212,7 +216,8 @@ class _HomeState extends State<_Home> with WidgetsBindingObserver {
       final route = await platform.invokeMethod<String>('takeRoute');
       if (route != null && mounted) await _route(route);
     } catch (_) {
-      if (mounted) _toast(t('تعذّر فتح الاختصار', 'Could not open shortcut'));
+      if (mounted)
+        _toast(t('ماقدرناش نفتح الاختصار', 'Could not open shortcut'));
     }
   }
 
@@ -265,7 +270,9 @@ class _HomeState extends State<_Home> with WidgetsBindingObserver {
       return true;
     } catch (_) {
       if (mounted) {
-        _toast(t('تعذّر الحفظ. جرّب مرة تانية.', 'Could not save. Try again.'));
+        _toast(
+          t('التسجيل ما اتحفظش. جرّب تاني.', 'Could not save. Try again.'),
+        );
       }
       return false;
     }
@@ -340,7 +347,10 @@ class _HomeState extends State<_Home> with WidgetsBindingObserver {
       false;
 
   Future<void> _route(String route) async {
-    if (!mounted || _handlingRoute || data['stage'] != 3) return;
+    if (!mounted ||
+        _handlingRoute ||
+        (data['stage'] != 3 && route != 'privacy'))
+      return;
     _handlingRoute = true;
     try {
       final parts = route.split('/');
@@ -359,6 +369,8 @@ class _HomeState extends State<_Home> with WidgetsBindingObserver {
           await _openWidgetInstance(int.parse(id));
         case ['routine']:
           setState(() => tab = 2);
+        case ['privacy']:
+          await _privacy();
         case ['updates']:
           await _openUpdates();
         case ['stock', final id]:
@@ -370,6 +382,9 @@ class _HomeState extends State<_Home> with WidgetsBindingObserver {
         case ['expiry', final id]:
           setState(() => tab = 2);
           await _editMedicationExpiry(id);
+        case ['packs', final id]:
+          setState(() => tab = 2);
+          await _medicationPacks(id);
         case ['follow-up', final id]:
           setState(() => tab = 2);
           await _openFollowUp(id);

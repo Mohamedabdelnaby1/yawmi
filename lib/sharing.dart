@@ -26,8 +26,8 @@ extension _Sharing on _HomeState {
           SectionTitle(t('النسخ والمشاركة', 'Backups and sharing')),
           Text(
             t(
-              'أنت تختار الملفات التي تحفظها أو تشاركها. النسخة الاحتياطية بصيغة يومي مشفّرة بكلمة مرور. ملفات PDF وCSV قابلة للقراءة.',
-              'You choose which files to save or share. Yawmi backups are encrypted with a password. PDF and CSV reports are readable files.',
+              'إنت بتختار الملف اللي تحفظه أو تشاركه. النسخة الاحتياطية بتتشفّر بكلمة مرور. ملفات PDF وExcel تتفتح عادي.',
+              'You choose which files to save or share. Yawmi backups are encrypted with a password. PDF and Excel reports are readable files.',
             ),
           ),
           SectionTitle(t('الحذف', 'Deletion')),
@@ -54,7 +54,12 @@ extension _Sharing on _HomeState {
                   );
                 } catch (_) {
                   if (c.mounted)
-                    _toast(t('تعذّر فتح الرابط', 'Could not open the link'));
+                    _toast(
+                      t(
+                        'الرابط ما فتحش. جرّب تاني.',
+                        'Could not open the link',
+                      ),
+                    );
                 }
               },
               icon: const Icon(Icons.open_in_new_rounded),
@@ -83,17 +88,33 @@ extension _Sharing on _HomeState {
             emphasized: true,
             title: t('استورد قياسات من CSV', 'Import readings from CSV'),
             subtitle: t(
-              'استخدم أعمدة تصدير يومي لإضافة قراءات إلى سجلك.',
+              'ضيف قراءات من ملف CSV متوافق مع يومي.',
               'Use the Yawmi export columns to add readings to your journal.',
             ),
             icon: Icons.move_to_inbox_outlined,
             onTap: () => _transferFromDataCenter(c, _importCsv),
           ),
+          if (Platform.isAndroid && data['stage'] == 3) ...[
+            const SizedBox(height: 8),
+            ControlCard(
+              title: t(
+                'استورد من Health Connect',
+                'Import from Health Connect',
+              ),
+              subtitle: t(
+                'السكر والضغط · آخر ٧ أيام · أندرويد ١٤+',
+                'Glucose and pressure · Last 7 days · Android 14+',
+              ),
+              icon: Icons.sync_alt_rounded,
+              tonalColor: mint,
+              onTap: _healthConnect,
+            ),
+          ],
           const SizedBox(height: 8),
           ControlCard(
             title: t('استعادة نسخة يومي', 'Restore a Yawmi backup'),
             subtitle: t(
-              'راجع محتويات النسخة قبل استبدال سجلك.',
+              'شوف إيه اللي في النسخة قبل ما تستبدل سجلك.',
               'Review the backup before replacing your journal.',
             ),
             icon: Icons.restore_page_outlined,
@@ -103,9 +124,9 @@ extension _Sharing on _HomeState {
           if (data['stage'] == 3) ...[
             SectionTitle(t('تصدير', 'Export')),
             ControlCard(
-              title: t('حفظ نسخة مشفّرة', 'Save an encrypted backup'),
+              title: t('احفظ نسخة مشفّرة', 'Save an encrypted backup'),
               subtitle: t(
-                'السجل والإعدادات وتصميمات الويدجت',
+                'خد نسخة من سجلك وإعداداتك وتصميمات الويدجت',
                 'Journal, preferences and widget designs',
               ),
               icon: Icons.lock_outline_rounded,
@@ -118,7 +139,7 @@ extension _Sharing on _HomeState {
             ),
             const SizedBox(height: 8),
             ControlCard(
-              title: t('تقرير PDF أو CSV', 'PDF or CSV report'),
+              title: t('تقرير PDF أو Excel', 'PDF or Excel report'),
               subtitle: t(
                 'اختار الفترة والبيانات اللي هتشاركها.',
                 'Choose the date range and data to share.',
@@ -225,7 +246,7 @@ extension _Sharing on _HomeState {
       if (mounted) {
         _toast(
           t(
-            'تعذّر قراءة الملف. راجع أعمدة CSV بتنسيق يومي.',
+            'الملف ما اتقراش. راجع ترتيب أعمدة CSV بتنسيق يومي.',
             'Could not read the file. Check the Yawmi CSV columns.',
           ),
         );
@@ -279,7 +300,15 @@ extension _Sharing on _HomeState {
     final selected = fromHistory && filter != null
         ? types.where((id) => id == filter).toSet()
         : types.toSet();
-    var notes = false, busy = false, summary = onePage;
+    if (!fromHistory &&
+        sourceOverride == null &&
+        rows(
+          data['meds'],
+        ).any((m) => m['archived'] != true && ints(m['times']).isNotEmpty)) {
+      types.add(medicineCard);
+      selected.add(medicineCard);
+    }
+    var notes = false, busy = false, summary = onePage, appendix = false;
     await _page<void>(
       (_) => StatefulBuilder(
         builder: (c, redraw) {
@@ -298,18 +327,39 @@ extension _Sharing on _HomeState {
                   .where(
                     (e) =>
                         selected.contains(e['tracker']) &&
+                        (!isPlannedEntry(e) || e['planCompletedAt'] != null) &&
                         !eventTime(e).isBefore(first) &&
                         eventTime(e).isBefore(end),
                   )
                   .toList()
                 ..sort((a, b) => eventTime(b).compareTo(eventTime(a)));
           final label = '${dayKey(range.start)} – ${dayKey(range.end)}';
+          final includeCoverage =
+              !fromHistory &&
+              sourceOverride == null &&
+              selected.contains(medicineCard);
+          final canSharePdf =
+              filtered.isNotEmpty ||
+              summary &&
+                  includeCoverage &&
+                  calendarSpan(first, range.end) <= 366 &&
+                  doseCoverage(data, first, range.end).scheduled > 0;
           Future<void> share(bool pdf) async {
             redraw(() => busy = true);
             try {
               if (pdf) {
                 final bytes = summary
-                    ? await makeVisitSummaryPdf(data, filtered, ar, label)
+                    ? await makeVisitSummaryPdf(
+                        data,
+                        filtered,
+                        ar,
+                        label,
+                        start: first,
+                        through: range.end,
+                        notes: notes,
+                        includeDoseCoverage: includeCoverage,
+                        appendDetails: appendix,
+                      )
                     : await makePdf(data, filtered, ar, label, notes: notes);
                 await shareBytes(
                   bytes,
@@ -318,15 +368,15 @@ extension _Sharing on _HomeState {
                 );
               } else {
                 await shareBytes(
-                  makeCsv(filtered, notes: notes),
-                  'Yawmi-report.csv',
-                  'text/csv',
+                  await makeExcel(data, filtered, ar, label, notes: notes),
+                  'Yawmi-report.xlsx',
+                  excelMime,
                 );
               }
             } catch (_) {
               _toast(
                 t(
-                  'تعذّر إنشاء التقرير أو مشاركته.',
+                  'ماقدرناش نجهّز التقرير أو نشاركه. جرّب تاني.',
                   'Could not create or share the report.',
                 ),
               );
@@ -438,8 +488,8 @@ extension _Sharing on _HomeState {
                       ),
                       subtitle: Text(
                         t(
-                          'آخر قراءة وعدد الإدخالات لكل متابعة',
-                          'Latest value and entry count per tracker',
+                          'اتجاه القياسات وتغطية التسجيل وأهم نقاط الزيارة',
+                          'Reading trends, recording coverage, and visit highlights',
                         ),
                       ),
                       value: summary,
@@ -455,22 +505,39 @@ extension _Sharing on _HomeState {
                           subtitle: Text(group.detail),
                           trailing: Text(group.count.toString()),
                         ),
-                    if (!summary)
+                    if (summary)
                       SwitchListTile(
-                        title: Text(t('ضمّ الملاحظات', 'Include notes')),
-                        value: notes,
+                        title: Text(
+                          t(
+                            'أضف تفاصيل السجل بعد الملخص',
+                            'Append journal details',
+                          ),
+                        ),
+                        value: appendix,
                         onChanged: busy
                             ? null
-                            : (on) => redraw(() => notes = on),
+                            : (on) => redraw(() => appendix = on),
                       ),
+                    SwitchListTile(
+                      title: Text(
+                        summary
+                            ? t(
+                                'ضمّ الملاحظات والحساسية المسجّلة',
+                                'Include notes and recorded allergies',
+                              )
+                            : t('ضمّ الملاحظات', 'Include notes'),
+                      ),
+                      value: notes,
+                      onChanged: busy ? null : (on) => redraw(() => notes = on),
+                    ),
                     if (busy) const LinearProgressIndicator(),
                     SectionTitle(
-                      '${t('الإدخالات المختارة', 'Selected entries')} · ${filtered.length}',
+                      '${t('التسجيلات اللي اخترتها', 'Selected entries')} · ${filtered.length}',
                     ),
                     if (filtered.isEmpty)
                       EmptyPanel(
                         Icons.article_outlined,
-                        t('مفيش إدخالات في الاختيار', 'No entries selected'),
+                        t('مفيش تسجيلات في الاختيار ده', 'No entries selected'),
                         t(
                           'وسّع الفترة أو اختار نوعًا آخر.',
                           'Choose a wider date range or another type.',
@@ -487,7 +554,7 @@ extension _Sharing on _HomeState {
                   children: [
                     Expanded(
                       child: JournalButton(
-                        onPressed: busy || filtered.isEmpty
+                        onPressed: busy || !canSharePdf
                             ? null
                             : () => share(true),
                         child: Text(
@@ -500,10 +567,10 @@ extension _Sharing on _HomeState {
                     const SizedBox(width: 7),
                     Expanded(
                       child: OutlinedButton(
-                        onPressed: busy || filtered.isEmpty || summary
+                        onPressed: busy || filtered.isEmpty
                             ? null
                             : () => share(false),
-                        child: Text(t('شارك CSV', 'Share CSV')),
+                        child: Text(t('شارك Excel', 'Share Excel')),
                       ),
                     ),
                   ],
@@ -559,7 +626,9 @@ extension _Sharing on _HomeState {
       }
       return true;
     } catch (_) {
-      _toast(t('تعذّر تجهيز النسخة الاحتياطية.', 'Could not create backup.'));
+      _toast(
+        t('ماقدرناش نجهّز النسخة الاحتياطية.', 'Could not create backup.'),
+      );
       return false;
     }
   }
@@ -599,7 +668,7 @@ extension _Sharing on _HomeState {
       final entries = rows(next['entries'])
         ..sort((a, b) => eventTime(a).compareTo(eventTime(b)));
       final details = [
-        t('الإدخالات ', 'Entries ') + entries.length.toString(),
+        t('التسجيلات ', 'Entries ') + entries.length.toString(),
         t('الحالات ', 'Conditions ') +
             rows(next['conditions']).length.toString(),
         t('الأدوية ', 'Medications ') + rows(next['meds']).length.toString(),
@@ -676,7 +745,7 @@ extension _Sharing on _HomeState {
     } catch (_) {
       _toast(
         t(
-          'تعذّر فتح الملف. راجع كلمة المرور وإصدار النسخة.',
+          'النسخة ما فتحتش. راجع كلمة المرور وإصدار الملف.',
           'Could not open backup. Check the password and file version.',
         ),
       );

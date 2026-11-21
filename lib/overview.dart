@@ -341,37 +341,61 @@ extension _Overview on _HomeState {
     if (apply == true) await save((d) => d['quickPins'] = pinned);
   }
 
-  Widget _todayMasthead(DateTime date, bool today, int entries, int? doses) =>
-      Enter(
-        key: ValueKey(dayKey(date)),
-        child: _FieldBanner(
-          title: today ? t('اليوم', 'Today') : prettyDate(date, 'EEEE'),
-          detail: prettyDate(date, today ? 'EEEE، d MMMM' : 'd MMMM yyyy'),
-          accent: leaf,
-          action: IconButton.filled(
-            style: IconButton.styleFrom(
-              backgroundColor: leaf,
-              foregroundColor: ink,
+  Widget _todayMasthead(
+    DateTime date,
+    bool today,
+    int entries,
+    int? doses, {
+    required bool hasLate,
+  }) => Enter(
+    key: ValueKey(dayKey(date)),
+    child: _FieldBanner(
+      title: today ? t('اليوم', 'Today') : prettyDate(date, 'EEEE'),
+      detail: prettyDate(date, today ? 'EEEE، d MMMM' : 'd MMMM yyyy'),
+      accent: leaf,
+      action: IconButton.filled(
+        style: IconButton.styleFrom(
+          backgroundColor: leaf,
+          foregroundColor: ink,
+        ),
+        onPressed: () async {
+          final selected = await showDatePicker(
+            context: context,
+            firstDate: DateTime(1900),
+            lastDate: now,
+            initialDate: date,
+          );
+          if (selected != null && mounted) _selectDashboardDay(selected);
+        },
+        tooltip: t('اختار التاريخ', 'Select a date'),
+        icon: const Icon(Icons.calendar_today_outlined, size: 19),
+      ),
+      bottom: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (today) ...[
+            Text(
+              todayCopy(
+                ar,
+                entries: entries,
+                hasLate: hasLate,
+                mood: loggedMood(
+                  (data['entries'] as List? ?? []).cast<JournalRow>(),
+                  now,
+                ),
+                routine: routineCopy(data, now, ar),
+              ),
+              style: const TextStyle(color: paper, fontSize: 13, height: 1.22),
             ),
-            onPressed: () async {
-              final selected = await showDatePicker(
-                context: context,
-                firstDate: DateTime(1900),
-                lastDate: now,
-                initialDate: date,
-              );
-              if (selected != null && mounted) _selectDashboardDay(selected);
-            },
-            tooltip: t('اختار التاريخ', 'Select a date'),
-            icon: const Icon(Icons.calendar_today_outlined, size: 19),
-          ),
-          bottom: Row(
+            const SizedBox(height: 10),
+          ],
+          Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: _FieldMetric(
                   value: entries.toString(),
-                  label: t('إدخالات مسجّلة', 'Journal entries'),
+                  label: t('تسجيلات النهارده', 'Journal entries'),
                   icon: Icons.receipt_long_outlined,
                   accent: leaf,
                   onTap: () => _historyDay(date),
@@ -393,8 +417,10 @@ extension _Overview on _HomeState {
               ],
             ],
           ),
-        ),
-      );
+        ],
+      ),
+    ),
+  );
 
   void _historyDay(DateTime date) => _redraw(() {
     tab = 1;
@@ -437,7 +463,7 @@ extension _Overview on _HomeState {
               Expanded(
                 child: _FieldMetric(
                   value: '${shown.length}',
-                  label: t('إدخالات في الفترة', 'Entries in range'),
+                  label: t('تسجيلات في الفترة', 'Entries in range'),
                   icon: Icons.receipt_long_outlined,
                   accent: rose,
                 ),

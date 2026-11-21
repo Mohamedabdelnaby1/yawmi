@@ -267,7 +267,7 @@ extension _Adaptive on _HomeState {
         ),
         Text(_patternReason(event['pattern'], event['days'])),
         Text(prettyDate(eventTime(event))),
-        if (event['undone'] == true) Text(t('تم التراجع', 'Undone')),
+        if (event['undone'] == true) Text(t('رجّعنا الإعداد', 'Undone')),
         if (effective)
           TextButton.icon(
             icon: const Icon(Icons.undo),

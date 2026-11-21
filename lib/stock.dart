@@ -97,6 +97,8 @@ extension _Stock on _HomeState {
                           _stockCard(item.med, balance: item.balance),
                           const SizedBox(height: 8),
                           _expiryCard(item.med),
+                          const SizedBox(height: 8),
+                          _packsCard(item.med),
                         ],
                       ),
                     ),
@@ -133,6 +135,162 @@ extension _Stock on _HomeState {
     );
   }
 
+  Widget _packsCard(JournalRow medicine) => ControlCard(
+    title: t('العبوات والدفعات', 'Packages and batches'),
+    subtitle: t(
+      '${rows(medicine['packs']).length} عبوة محفوظة · الجرد لكل عبوة',
+      '${rows(medicine['packs']).length} saved packages · per-package count',
+    ),
+    icon: Icons.inventory_2_outlined,
+    tonalColor: lavender,
+    onTap: () => _medicationPacks(medicine['id']),
+  );
+
+  Future<void> _medicationPacks(String id) => _page<void>(
+    (_) => ListenableBuilder(
+      listenable: widget.db,
+      builder: (c, _) {
+        final med = rows(
+          data['meds'],
+        ).where((r) => r['id'] == id && r['archived'] != true).firstOrNull;
+        final packs = rows(med?['packs']);
+        return Scaffold(
+          appBar: AppBar(
+            title: Text(t('العبوات والدفعات', 'Packages and batches')),
+          ),
+          body: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              if (med != null) ...[
+                JournalCover(
+                  title: med['name'],
+                  icon: Icons.inventory_2_outlined,
+                  accent: lavender,
+                  subtitle: t(
+                    'اكتب الكمية اللي عدّيتها وتاريخ الصلاحية لكل عبوة.',
+                    'Enter the counted quantity and expiry date for each package.',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                for (final pack in packs)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: ControlCard(
+                      title: pack['name'],
+                      subtitle: [
+                        t(
+                          'آخر جرد ${_stockQuantity((pack['count'] as num).toDouble())}',
+                          'Last count ${_stockQuantity((pack['count'] as num).toDouble())}',
+                        ),
+                        if (DateAlert.read(pack['expiry']) case final expiry?)
+                          _dateStatus(expiry.date, expiry: true),
+                      ].join(' · '),
+                      icon: Icons.inventory_outlined,
+                      onTap: () => _editMedicationPack(id, pack),
+                    ),
+                  ),
+                if (packs.length < 30)
+                  JournalButton.icon(
+                    onPressed: () => _editMedicationPack(id, null),
+                    icon: const Icon(Icons.add),
+                    label: Text(t('أضف عبوة', 'Add package')),
+                  ),
+              ],
+            ],
+          ),
+        );
+      },
+    ),
+  );
+
+  Future<void> _editMedicationPack(
+    String medicineId,
+    JournalRow? previous,
+  ) async {
+    var name = previous?['name'] as String? ?? '';
+    var amount = previous?['count']?.toString() ?? '';
+    final form = GlobalKey<FormState>();
+    final draft = await _sheet<JournalRow>(
+      (c) => _JournalPanel(
+        heading: AppBar(
+          title: Text(t('جرد العبوة', 'Package count')),
+          leading: const CloseButton(),
+        ),
+        footer: JournalButton.icon(
+          onPressed: () {
+            if (form.currentState?.validate() != true) return;
+            Navigator.pop(c, {
+              'name': name.trim(),
+              'count': readNumber(amount)!,
+            });
+          },
+          icon: const Icon(Icons.calendar_today_rounded),
+          label: Text(t('تابع لتاريخ الصلاحية', 'Continue to expiry date')),
+        ),
+        body: Form(
+          key: form,
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.all(16),
+            children: [
+              TextFormField(
+                initialValue: name,
+                maxLength: 65,
+                decoration: InputDecoration(
+                  labelText: t(
+                    'اسم العبوة أو رقم الدفعة',
+                    'Package or lot name',
+                  ),
+                ),
+                onChanged: (v) => name = v,
+                validator: (v) => v?.trim().isNotEmpty == true
+                    ? null
+                    : t('اكتب اسمًا للعبوة.', 'Enter a package name.'),
+              ),
+              TextFormField(
+                initialValue: amount,
+                maxLength: 12,
+                decoration: InputDecoration(
+                  labelText: t('الكمية في آخر جرد', 'Quantity last counted'),
+                ),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                onChanged: (v) => amount = v,
+                validator: (v) {
+                  final number = readNumber(v ?? '');
+                  return number == null || number < 0 || number > 100000000
+                      ? t('اكتب كمية صالحة.', 'Enter a valid quantity.')
+                      : null;
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (draft == null || !mounted) return;
+    final id = previous?['id'] ?? newId();
+    Future<bool> update(DateAlert? alert) => save((d) {
+      final med = rows(d['meds'])
+          .where((m) => m['id'] == medicineId && m['archived'] != true)
+          .firstOrNull;
+      if (med == null) return;
+      final packs = rows(med['packs']).where((p) => p['id'] != id).toList();
+      if (alert != null)
+        packs.add({...draft, 'id': id, 'expiry': alert.toRow()});
+      upsert(d, 'meds', {...med, 'packs': packs});
+    });
+    await _dateAlertEditor(
+      heading: t('صلاحية العبوة', 'Package expiry'),
+      initialName: draft['name'],
+      current: DateAlert.read(previous?['expiry']),
+      expiry: true,
+      onSave: (_, _, alert) => update(alert),
+      onRemove: previous == null ? null : () => update(null),
+    );
+  }
+
   Widget _stockCard(JournalRow med, {StockBalance? balance}) {
     balance ??= medicationStockBalance(med, rows(data['doses']));
     final low = balance != null && balance.remaining <= balance.stock.threshold;
@@ -142,7 +300,7 @@ extension _Stock on _HomeState {
           : t('مخزون الدواء', 'Medication stock'),
       subtitle: balance == null
           ? t(
-              'حدّد الكمية المتبقية وتنبيه إعادة الصرف.',
+              'اكتب اللي باقي عندك، واختار إمتى ينبهك يومي.',
               'Set the remaining quantity and a refill alert.',
             )
           : [

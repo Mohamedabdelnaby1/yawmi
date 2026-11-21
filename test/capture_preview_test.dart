@@ -340,7 +340,7 @@ void main() {
       );
       await open(find.text('المياه خلال اليوم'), shot: 'water-schedule-ar');
       await open(find.text('فعّل جدول المياه'));
-      final preview = find.text('معاينة المواعيد');
+      final preview = find.text('المواعيد قبل الحفظ');
       if (preview.evaluate().isEmpty) {
         await tester.scrollUntilVisible(
           preview,
@@ -529,7 +529,7 @@ void main() {
       await tester.pumpAndSettle();
       await open(find.text('قبل الأكل'));
       await open(
-        find.text('احفظ الإدخال'),
+        find.text('احفظ التسجيل'),
         shot: 'entry-saved-ar',
         animation: 'entry_save',
       );
@@ -540,7 +540,7 @@ void main() {
         isTrue,
       );
       await open(cardTitle('ضغط الدم'), shot: 'pressure-form-ar');
-      await recordPressure('ar', 'احفظ الإدخال');
+      await recordPressure('ar', 'احفظ التسجيل');
       await open(find.text('رتّب'), shot: 'arrange-today-ar');
       await back();
     }

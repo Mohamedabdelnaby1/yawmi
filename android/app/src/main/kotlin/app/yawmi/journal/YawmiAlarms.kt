@@ -440,9 +440,13 @@ internal object YawmiAlarms {
             val key = next.occurrence.key
             val channel = rule.optString("type", "tracking")
             val title = rule.optString("title", if (ar) "تذكير من يومي" else "Yawmi reminder")
-            val description = if (now - next.original >= 10 * MINUTE)
-                if (ar) "راجع الموعد المسجّل في يومي" else "Review the scheduled time in Yawmi"
-                else if (ar) "افتح يومي لمراجعة الموعد" else "Open Yawmi to review"
+            val description = if (now - next.original >= 10 * MINUTE) {
+                if (ar) "الميعاد عدى. افتح يومي وراجع التسجيل." else "The scheduled time passed. Open Yawmi to review."
+            } else if (next.priorCount > 0) {
+                if (ar) "لسه مفيش تسجيل للميعاد ده. افتح يومي تراجعه." else "No entry for this reminder yet. Open Yawmi to review."
+            } else {
+                if (ar) "افتح يومي وشوف تفاصيل الميعاد." else "Open Yawmi to see the reminder."
+            }
             val route = if (!rule.isNull("tracker") && rule.optString("tracker").isNotBlank())
                 "reminder/$ruleId/" + key.substringAfterLast(':')
                 else rule.optString("route").ifEmpty { if (channel == "medicine") "dose/$key" else "routine" }

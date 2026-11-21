@@ -133,6 +133,7 @@ extension _FollowUps on _HomeState {
     Tracker? suggested,
     String? suggestedName,
     DateTime? suggestedDate,
+    String? sourceEntry,
   }) async {
     final existing = rows(
       data['followUps'],
@@ -153,6 +154,7 @@ extension _FollowUps on _HomeState {
           'id': id ?? newId(),
           'name': name,
           'tracker': trackerId,
+          if (sourceEntry != null) 'sourceEntry': sourceEntry,
           'alert': alert.toRow(),
         }),
       ),
@@ -261,7 +263,7 @@ extension _FollowUps on _HomeState {
                             if (await _confirm(
                                   t('احذف الموعد؟', 'Delete this date?'),
                                   t(
-                                    'هيتم إلغاء التنبيهات المرتبطة به.',
+                                    'هتتوقف التنبيهات بتاعة الميعاد ده.',
                                     'Its scheduled alerts will be cancelled.',
                                   ),
                                   t('احذف', 'Delete'),

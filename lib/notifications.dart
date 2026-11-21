@@ -23,7 +23,10 @@ extension _Notifications on _HomeState {
     } catch (_) {
       if (mounted)
         _toast(
-          t('تعذّر فتح إعدادات أندرويد.', 'Could not open Android settings.'),
+          t(
+            'ماقدرناش نفتح إعدادات أندرويد.',
+            'Could not open Android settings.',
+          ),
         );
     }
   }
@@ -140,7 +143,7 @@ extension _Notifications on _HomeState {
               ControlCard(
                 title: t('ساعات الهدوء', 'Quiet hours'),
                 subtitle: t(
-                  'كتم أو تأجيل أو تخطّي حسب نوع التذكير',
+                  'اختار إيه اللي يحصل لكل نوع تنبيه وقت الهدوء.',
                   'Silence, defer, or skip by reminder category',
                 ),
                 icon: Icons.bedtime_outlined,
@@ -297,6 +300,16 @@ extension _Notifications on _HomeState {
   );
 
   Future<void> _waterReminder() async {
+    if (waterTrackingMode(data) == 'limit') {
+      _toast(
+        t(
+          'جدول الشرب متوقف أثناء استخدام حد يومي للسوائل.',
+          'Drinking reminders are paused while a daily fluid limit is set.',
+        ),
+      );
+      await _trackerPreferences(trackerFor(data, 'water')!);
+      return;
+    }
     final stored = data['waterReminder'] as Map? ?? {};
     var enabled = stored['enabled'] == true, busy = false;
     var wake = (stored['wake'] as int?) ?? 420,
@@ -463,7 +476,7 @@ extension _Notifications on _HomeState {
                     onPressed: () => redraw(() => repeat = null),
                     child: Text(t('اتبع إعداد النوع', 'Use category setting')),
                   ),
-                SectionTitle(t('معاينة المواعيد', 'Schedule preview')),
+                SectionTitle(t('المواعيد قبل الحفظ', 'Schedule preview')),
                 if (slots.isEmpty)
                   Text(
                     t(
