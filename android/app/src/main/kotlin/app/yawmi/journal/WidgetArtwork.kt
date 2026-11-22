@@ -16,12 +16,25 @@ import android.text.TextUtils
 import android.util.SizeF
 import org.json.JSONObject
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.format.TextStyle
 import java.util.Locale
 import kotlin.math.min
 import kotlin.math.sqrt
 
-internal class WidgetSpace(size: SizeF, val layout: JSONObject) {
+internal class WidgetSpace(size: SizeF, val layout: JSONObject, private val system24: Boolean) {
+    private val timeLanguage = layout.optString("timeLanguage", "en")
+    private val timeFormat = layout.optString("clockFormat", "system")
+
+    fun clockText(time: LocalTime) = widgetClockText(time, timeLanguage, timeFormat, system24)
+
+    fun cardValue(card: JSONObject): String {
+        val value = card.optString("value")
+        return if (card.optString("id") == "medicine") {
+            widgetDoseTimeText(value, timeLanguage, timeFormat, system24)
+        } else value
+    }
+
     val width = size.width.coerceIn(48f, 800f)
     val height = size.height.coerceIn(48f, 900f)
     val slim = height < 105
@@ -277,7 +290,7 @@ internal class WidgetArtwork(
             }
         }
         val unit = card.optString("unit")
-        val value = card.optString("value")
+        val value = space.cardValue(card)
         val context = card.optString("context").takeIf { h >= 66 && w >= 93 }.orEmpty()
         val labelSize = if (compact || w < 105) 11f else if (w < 160) 12f else 14f
         val separateUnit = unit.isNotBlank() && w < 75 && h >= 52

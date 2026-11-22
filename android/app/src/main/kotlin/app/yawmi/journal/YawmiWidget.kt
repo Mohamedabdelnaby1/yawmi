@@ -66,7 +66,7 @@ open class YawmiWidget : AppWidgetProvider() {
         private const val snapshotKey = "snapshot_v2"
         private data class ArtworkKey(
             val layout: String, val size: SizeF, val ar: Boolean, val dark: Boolean,
-            val density: Float, val date: java.time.LocalDate,
+            val density: Float, val date: java.time.LocalDate, val system24: Boolean,
         )
         private val artwork = object : LruCache<ArtworkKey, Bitmap>(12 * 1024 * 1024) {
             override fun sizeOf(key: ArtworkKey, value: Bitmap) = value.allocationByteCount
@@ -318,7 +318,8 @@ open class YawmiWidget : AppWidgetProvider() {
                 "dark" -> true
                 else -> launcherDark
             }
-            val space = layout?.let { WidgetSpace(size, it) }
+            val system24 = DateFormat.is24HourFormat(context)
+            val space = layout?.let { WidgetSpace(size, it, system24) }
             val visible = space != null
             val empty = when {
                 layout == null -> if (ar) "يومي · افتح التطبيق مرة واحدة" else "Yawmi · Open the app to sync"
@@ -338,8 +339,7 @@ open class YawmiWidget : AppWidgetProvider() {
             if (clock) {
                 val time = R.id.widget_clock_time
                 val color = if (dark) 0xfff7f6ee.toInt() else 0xff152944.toInt()
-                val text = widgetClockText(now.toLocalTime(), space.layout.optString("timeLanguage", "en"),
-                    space.layout.optString("clockFormat", "system"), DateFormat.is24HourFormat(context))
+                val text = space.clockText(now.toLocalTime())
                 views.setTextViewText(time, text)
                 views.setTextColor(time, color)
                 views.setTextViewTextSize(time, TypedValue.COMPLEX_UNIT_DIP, space.clockSize)
@@ -354,7 +354,7 @@ open class YawmiWidget : AppWidgetProvider() {
                 }
                 views.setOnClickPendingIntent(R.id.widget_clock_strip, appShortcut(context, "today", "widget-clock-$id"))
             }
-            val artworkKey = ArtworkKey(space.layout.toString(), size, ar, dark, density, now.toLocalDate())
+            val artworkKey = ArtworkKey(space.layout.toString(), size, ar, dark, density, now.toLocalDate(), system24)
             val bitmap = artwork.get(artworkKey) ?: WidgetArtwork(space, ar, dark, context.assets)
                 .bitmap(density, now.toLocalDate()).also { artwork.put(artworkKey, it) }
             views.setImageViewBitmap(R.id.widget_image, bitmap)
@@ -394,7 +394,7 @@ open class YawmiWidget : AppWidgetProvider() {
                 for ((c, card) in (if (ar) cards.reversed() else cards).withIndex()) {
                     if (c > 0) line.addView(R.id.widget_row, gap())
                     val cell = RemoteViews(context.packageName, R.layout.yawmi_widget_cell)
-                    val label = listOf(card.optString("title"), card.optString("value"),
+                    val label = listOf(card.optString("title"), space.cardValue(card),
                         card.optString("unit"), card.optString("context"))
                         .filter { it.isNotBlank() }.joinToString(" ")
                     cell.setContentDescription(R.id.widget_hit, label)

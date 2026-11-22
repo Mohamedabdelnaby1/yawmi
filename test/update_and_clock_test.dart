@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:yawmi/domain.dart';
 import 'package:yawmi/main.dart';
 import 'package:yawmi/widgets.dart';
@@ -66,6 +67,76 @@ void main() {
         restoreWidgetDesigns(state, state['widgets']).first['widgetLanguage'],
         'en',
       );
+    },
+  );
+
+  testWidgets(
+    'Widget dose preview follows its time format even without the clock',
+    (tester) async {
+      await initializeDateFormatting('ar');
+      final now = DateTime(2026, 11, 22, 12);
+      final state = freshState()
+        ..['meds'] = [
+          {
+            'id': 'med',
+            'name': 'Test dose',
+            'revision': 1,
+            'times': [18 * 60 + 30],
+            'days': allDays,
+            'start': '2026-11-01',
+          },
+        ];
+      final config = {
+        'id': 'dose',
+        'enabled': [medicineCard],
+        'clock': false,
+        'clockFormat': '12',
+        'names': true,
+      };
+      state['widgets'] = [config];
+      final layout =
+          widgetSnapshot(state, false, now)['layouts']['dose'] as Map;
+      final card = rows(layout['cards']).single;
+      expect(card['value'], '18:30');
+      expect(card['advance']['2026-11-23']['value'], '18:30');
+
+      for (final (format, system24, digits, expected) in [
+        ('12', true, 'en', '6:30 PM'),
+        ('24', false, 'en', '18:30'),
+        ('system', false, 'en', '6:30 PM'),
+        ('system', true, 'en', '18:30'),
+        ('12', false, 'ar', '٦:٣٠ م'),
+      ]) {
+        const size = Size(108, 150);
+        await tester.pumpWidget(
+          MediaQuery(
+            data: MediaQueryData(alwaysUse24HourFormat: system24),
+            child: Directionality(
+              textDirection: TextDirection.rtl,
+              child: Center(
+                child: SizedBox.fromSize(
+                  size: size,
+                  child: SceneArt(
+                    WidgetScene.responsive(
+                      state,
+                      {
+                        ...config,
+                        'clockFormat': format,
+                        'timeLanguage': digits,
+                      },
+                      true,
+                      size,
+                      today: now,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        expect(find.text(expected), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      }
     },
   );
 

@@ -69,6 +69,12 @@ Widget wrapNumeric(String s, TextStyle style, {int maxLines = 1}) => Text(
 
 typedef CardSummary = ({String value, String unit, String context});
 
+DateTime? _widgetDoseTime(String value) {
+  final match = RegExp(r'^([01][0-9]|2[0-3]):([0-5][0-9])$').firstMatch(value);
+  if (match == null) return null;
+  return DateTime(2000, 1, 1, int.parse(match[1]!), int.parse(match[2]!));
+}
+
 CardSummary summaryFor(
   JournalRow state,
   String id,
@@ -480,6 +486,31 @@ class WidgetScene {
   String get clockFormat => config['clockFormat']?.toString() ?? 'system';
   String get clockLanguage => config['clockLanguage']?.toString() ?? 'app';
   String get timeLanguage => config['timeLanguage'] == 'ar' ? 'ar' : 'en';
+  String formatTime(
+    DateTime time, {
+    required bool system24,
+    bool showPeriod = false,
+  }) {
+    final use24 = clockFormat == '24' || clockFormat == 'system' && system24;
+    final arabicDigits = timeLanguage == 'ar';
+    final hour12 = (time.hour + 11) % 12 + 1;
+    final minute = time.minute.toString().padLeft(2, '0');
+    final period = showPeriod
+        ? time.hour < 12
+              ? tr(arabicDigits, ' ص', ' AM')
+              : tr(arabicDigits, ' م', ' PM')
+        : '';
+    final value = use24
+        ? clockText(time.hour * 60 + time.minute)
+        : '$hour12:$minute$period';
+    return arabicDigits
+        ? value.replaceAllMapped(
+            RegExp(r'[0-9]'),
+            (match) => '٠١٢٣٤٥٦٧٨٩'[int.parse(match[0]!)],
+          )
+        : value;
+  }
+
   bool get dateArabic =>
       clockLanguage == 'ar' || (clockLanguage == 'app' && ar);
   String get dateLocale => dateArabic ? 'ar' : 'en';
@@ -891,14 +922,10 @@ class SceneArt extends StatelessWidget {
   );
 
   Widget _clockPreview(BuildContext context) {
-    final use24 =
-        scene.clockFormat == '24' ||
-        scene.clockFormat == 'system' &&
-            MediaQuery.alwaysUse24HourFormatOf(context);
-    final time = DateFormat(
-      use24 ? 'HH:mm' : 'h:mm',
-      scene.timeLanguage,
-    ).format(scene.now);
+    final time = scene.formatTime(
+      scene.now,
+      system24: MediaQuery.alwaysUse24HourFormatOf(context),
+    );
     final dateDir = scene.dateArabic ? TextDirection.rtl : TextDirection.ltr;
     final surface = _ink.withValues(alpha: .08);
     final clockFace = Center(
@@ -1026,6 +1053,14 @@ class SceneArt extends StatelessWidget {
 
   Widget _cell(BuildContext context, String id) {
     final item = scene.card(id);
+    final doseTime = id == medicineCard ? _widgetDoseTime(item.value) : null;
+    final value = doseTime == null
+        ? item.value
+        : scene.formatTime(
+            doseTime,
+            system24: MediaQuery.alwaysUse24HourFormatOf(context),
+            showPeriod: true,
+          );
     final name = scene.title(id);
     final tone = scene.cardAccent(id);
     final showIcon =
@@ -1114,7 +1149,7 @@ class SceneArt extends StatelessWidget {
                           textBaseline: TextBaseline.alphabetic,
                           children: [
                             label(
-                              item.value,
+                              value,
                               (compact
                                       ? 19.0
                                       : (wide && sizable ? 30.0 : 23.0)) *
@@ -1122,7 +1157,9 @@ class SceneArt extends StatelessWidget {
                                       ? 1.14
                                       : 1),
                               bold: true,
-                              ltr: RegExp(r'^[0-9•—]').hasMatch(item.value),
+                              ltr: doseTime == null
+                                  ? RegExp(r'^[0-9•—]').hasMatch(value)
+                                  : scene.timeLanguage == 'en',
                             ),
                             if (item.unit.isNotEmpty && width >= 75) ...[
                               const SizedBox(width: 4),
@@ -1163,7 +1200,7 @@ class SceneArt extends StatelessWidget {
       button: true,
       label: [
         name,
-        item.value,
+        value,
         item.unit,
         item.context,
       ].where((s) => s.isNotEmpty).join(' '),
