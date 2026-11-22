@@ -134,6 +134,7 @@ extension _FollowUps on _HomeState {
     String? suggestedName,
     DateTime? suggestedDate,
     String? sourceEntry,
+    String? visitId,
   }) async {
     final existing = rows(
       data['followUps'],
@@ -148,16 +149,25 @@ extension _FollowUps on _HomeState {
       current: DateAlert.read(existing?['alert']),
       initialDate: suggestedDate,
       completed: done,
-      onSave: (name, trackerId, alert) => save(
-        (d) => upsert(d, 'followUps', {
-          ...?existing,
-          'id': id ?? newId(),
-          'name': name,
-          'tracker': trackerId,
-          if (sourceEntry != null) 'sourceEntry': sourceEntry,
-          'alert': alert.toRow(),
-        }),
-      ),
+      onSave: (name, trackerId, alert) {
+        final pendingId = id ?? newId();
+        return save((d) {
+          final visit = rows(
+            d['visits'],
+          ).where((row) => row['id'] == visitId).firstOrNull;
+          if (visitId != null && visit == null) return;
+          upsert(d, 'followUps', {
+            ...?existing,
+            'id': pendingId,
+            'name': name,
+            'tracker': trackerId,
+            if (sourceEntry != null) 'sourceEntry': sourceEntry,
+            'alert': alert.toRow(),
+          });
+          if (visit != null)
+            upsert(d, 'visits', {...visit, 'followUp': pendingId});
+        });
+      },
       onDone: existing == null || done
           ? null
           : () => save(
@@ -212,7 +222,11 @@ extension _FollowUps on _HomeState {
     final enteredAt = DateTime.now();
     var name = initialName;
     var linked = tracker;
-    var date = current?.date ?? initialDate ?? shiftCalendarDate(enteredAt, 7);
+    var date =
+        (expiry ? initialDate : null) ??
+        current?.date ??
+        initialDate ??
+        shiftCalendarDate(enteredAt, 7);
     var minute = current?.minute ?? 540;
     final leads = {...?current?.leads};
     if (current == null) leads.addAll([7, 1, 0]);

@@ -341,23 +341,30 @@ extension _Overview on _HomeState {
     if (apply == true) await save((d) => d['quickPins'] = pinned);
   }
 
-  Widget _todayMasthead(
-    DateTime date,
-    bool today,
-    int entries,
-    int? doses, {
-    required bool hasLate,
-  }) => Enter(
-    key: ValueKey(dayKey(date)),
-    child: _FieldBanner(
-      title: today ? t('اليوم', 'Today') : prettyDate(date, 'EEEE'),
-      detail: prettyDate(date, today ? 'EEEE، d MMMM' : 'd MMMM yyyy'),
-      accent: leaf,
-      action: IconButton.filled(
-        style: IconButton.styleFrom(
-          backgroundColor: leaf,
-          foregroundColor: ink,
+  Widget _todayHeader(DateTime date, bool current) => Row(
+    children: [
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              prettyDate(date, 'EEEE، d MMMM'),
+              style: Theme.of(context).textTheme.labelLarge,
+            ),
+            Text(
+              current ? t('اليوم', 'Today') : t('تسجيلات اليوم', 'Day log'),
+              style: Theme.of(context).textTheme.headlineMedium,
+            ),
+            if (_profileName case final name?)
+              TextButton.icon(
+                onPressed: _showProfiles,
+                icon: const Icon(Icons.person_outline_rounded, size: 17),
+                label: Text(name),
+              ),
+          ],
         ),
+      ),
+      IconButton.outlined(
         onPressed: () async {
           final selected = await showDatePicker(
             context: context,
@@ -368,57 +375,47 @@ extension _Overview on _HomeState {
           if (selected != null && mounted) _selectDashboardDay(selected);
         },
         tooltip: t('اختار التاريخ', 'Select a date'),
-        icon: const Icon(Icons.calendar_today_outlined, size: 19),
+        icon: const Icon(Icons.calendar_today_outlined, size: 20),
       ),
-      bottom: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (today) ...[
-            Text(
-              todayCopy(
-                ar,
-                entries: entries,
-                hasLate: hasLate,
-                mood: loggedMood(
-                  (data['entries'] as List? ?? []).cast<JournalRow>(),
-                  now,
-                ),
-                routine: routineCopy(data, now, ar),
-              ),
-              style: const TextStyle(color: paper, fontSize: 13, height: 1.22),
-            ),
-            const SizedBox(height: 10),
-          ],
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: _FieldMetric(
-                  value: entries.toString(),
-                  label: t('تسجيلات النهارده', 'Journal entries'),
-                  icon: Icons.receipt_long_outlined,
-                  accent: leaf,
-                  onTap: () => _historyDay(date),
-                ),
-              ),
-              if (doses != null) ...[
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _FieldMetric(
-                    value: doses.toString(),
-                    label: t('جرعات منتظرة', 'Doses pending'),
-                    icon: Icons.medication_outlined,
-                    accent: honey,
-                    onTap: doses == 0
-                        ? null
-                        : () => _redraw(() => _dashboardSection = 1),
-                  ),
-                ),
-              ],
-            ],
+    ],
+  );
+
+  Widget _todayContext(
+    DateTime date,
+    int entries,
+    int? doses, {
+    required bool hasLate,
+  }) => Padding(
+    padding: const EdgeInsets.only(top: 10),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          todayCopy(
+            ar,
+            entries: entries,
+            hasLate: hasLate,
+            mood: loggedMood(rows(data['entries']), now),
+            routine: routineCopy(data, now, ar),
           ),
-        ],
-      ),
+        ),
+        Wrap(
+          spacing: 8,
+          children: [
+            TextButton.icon(
+              onPressed: () => _historyDay(date),
+              icon: const Icon(Icons.receipt_long_outlined, size: 17),
+              label: Text(t('تسجيلات النهارده · $entries', '$entries entries')),
+            ),
+            if (doses != null)
+              TextButton.icon(
+                onPressed: () => _redraw(() => _dashboardSection = 1),
+                icon: const Icon(Icons.medication_outlined, size: 17),
+                label: Text(t('جرعات منتظرة · $doses', '$doses doses pending')),
+              ),
+          ],
+        ),
+      ],
     ),
   );
 

@@ -39,6 +39,7 @@ class UpdateJob : JobService() {
 
 private const val JOB_ID = 81914
 private const val UPDATE_NOTICE = 81915
+private const val PUSH_JOB_ID = 81916
 
 internal object YawmiUpdates {
     private val worker = Executors.newSingleThreadExecutor()
@@ -68,8 +69,10 @@ internal object YawmiUpdates {
         prefs(c).edit().putBoolean("automatic", enabled).apply()
         if (enabled) onOpen(c, ar) else {
             c.getSystemService(JobScheduler::class.java).cancel(JOB_ID)
+            c.getSystemService(JobScheduler::class.java).cancel(PUSH_JOB_ID)
             c.getSystemService(NotificationManager::class.java).cancel(UPDATE_NOTICE)
         }
+        ReleasePush.sync(c, enabled)
     }
 
     fun onOpen(c: Context, ar: Boolean) {
@@ -81,17 +84,30 @@ internal object YawmiUpdates {
             File(c.cacheDir, "release-update").listFiles()?.forEach { it.delete() }
         }
         if (!active(c)) return
+        ReleasePush.sync(c, true)
         val jobs = c.getSystemService(JobScheduler::class.java)
-        if (jobs.getPendingJob(JOB_ID) == null) {
+        val interval = TimeUnit.MINUTES.toMillis(15)
+        val pending = jobs.getPendingJob(JOB_ID)
+        if (pending == null || pending.intervalMillis != interval) {
             jobs.schedule(JobInfo.Builder(JOB_ID, ComponentName(c, UpdateJob::class.java))
                 .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
-                .setPeriodic(TimeUnit.HOURS.toMillis(12))
+                .setPeriodic(interval)
                 .setPersisted(true)
                 .build())
         }
         val since = System.currentTimeMillis() - prefs(c).getLong("lastAttempt", 0)
-        val retryAfter = if (error == "check") 15 else 360
+        val retryAfter = if (error == "check") 5 else 1
         if (since !in 0 until TimeUnit.MINUTES.toMillis(retryAfter.toLong())) check(c)
+    }
+
+    fun releaseHint(c: Context, version: String) {
+        if (!active(c) || !newer(version, installed(c).versionName.orEmpty())) return
+        c.getSystemService(JobScheduler::class.java).schedule(
+            JobInfo.Builder(PUSH_JOB_ID, ComponentName(c, UpdateJob::class.java))
+                .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).setOverrideDeadline(10_000)
+                .build()
+        )
+        check(c)
     }
 
     @Synchronized
@@ -112,11 +128,15 @@ internal object YawmiUpdates {
                     releaseApi = true,
                     etag = store.getString("etag", null),
                 )
+                var responseTag: String? = null
+                var changedResponse = false
                 val latest = try {
                     when (connection.responseCode) {
                         304 -> previous
                         404 -> null
                         200 -> {
+                            changedResponse = true
+                            responseTag = connection.getHeaderField("ETag")
                             val bytes = connection.inputStream.use { input ->
                                 val buffer = ByteArray(4096)
                                 val output = ByteArrayOutputStream()
@@ -132,7 +152,6 @@ internal object YawmiUpdates {
                                 JSONObject(String(bytes, Charsets.UTF_8)),
                                 installed(c).versionName.orEmpty(),
                             )
-                            store.edit().putString("etag", connection.getHeaderField("ETag")).apply()
                             found
                         }
                         else -> throw IOException("GitHub release response")
@@ -141,6 +160,7 @@ internal object YawmiUpdates {
                     connection.disconnect()
                 }
                 store.edit().putString("release", latest?.toJson()?.toString())
+                    .apply { if (changedResponse) putString("etag", responseTag) }
                     .putLong("lastSuccess", System.currentTimeMillis()).apply()
                 if (latest == null) c.getSystemService(NotificationManager::class.java).cancel(UPDATE_NOTICE)
                 else if (!manual && active(c)) notifyUpdate(c, latest)
@@ -162,6 +182,7 @@ internal object YawmiUpdates {
             "size" to offer?.size, "notes" to offer?.notes, "checkedAt" to prefs(c).getLong("lastSuccess", 0),
             "progress" to downloadProgress, "ready" to (offer != null && ready(c, offer)),
             "error" to error,
+            "push" to ReleasePush.configured,
         )
     }
 
@@ -275,7 +296,11 @@ internal object YawmiUpdates {
             .setSmallIcon(R.drawable.ic_reminder)
             .setContentTitle(if (ar) "تحديث جديد ليومي" else "A new Yawmi update")
             .setContentText(if (ar) "الإصدار ${offer.version} جاهز للتنزيل" else "Version ${offer.version} is ready to download")
-            .setAutoCancel(true).setContentIntent(appShortcut(c, "updates", "app-update")).build())
+            .setAutoCancel(true).setContentIntent(appShortcut(c, "updates", "app-update"))
+            .addAction(Notification.Action.Builder(
+                null, if (ar) "حدّث دلوقتي" else "Update now",
+                appShortcut(c, "updates/download", "download-update")
+            ).build()).build())
         store.edit().putString("announced", offer.version).apply()
     }
 

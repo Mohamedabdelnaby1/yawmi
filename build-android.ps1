@@ -6,7 +6,8 @@ param(
     [switch]$Offline,
     [string]$Output,
     [string]$FacebookUrl = '',
-    [string]$PrivacyUrl = ''
+    [string]$PrivacyUrl = '',
+    [string]$FirebaseConfig = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -20,6 +21,22 @@ if ($Distribution -and ($Format -ne 'AAB' -or -not $PrivacyUrl)) {
 }
 if ($GithubUpdates -and $Format -ne 'APK') {
     throw 'GitHub in-app updates require an APK.'
+}
+if ($FirebaseConfig -and !$GithubUpdates) {
+    throw 'Firebase update notifications require -GithubUpdates.'
+}
+$firebase = @{}
+if ($FirebaseConfig) {
+    $config = Get-Content -LiteralPath $FirebaseConfig -Raw -Encoding utf8 | ConvertFrom-Json
+    $app = $config.client | Where-Object { $_.client_info.android_client_info.package_name -eq 'app.yawmi.journal' } | Select-Object -First 1
+    if (!$app -or !$app.api_key -or !$config.project_info.project_id -or !$app.client_info.mobilesdk_app_id) {
+        throw 'Invalid Firebase configuration for app.yawmi.journal.'
+    }
+    $firebase = @{
+        YAWMI_FCM_PROJECT_ID = $config.project_info.project_id
+        YAWMI_FCM_APP_ID = $app.client_info.mobilesdk_app_id
+        YAWMI_FCM_API_KEY = $app.api_key[0].current_key
+    }
 }
 if (-not $Output) {
     $versionLine = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'pubspec.yaml') |
@@ -42,6 +59,11 @@ $buildPath = Join-Path $tempRoot ('YawmiBuild-' + [Guid]::NewGuid().ToString('N'
 New-Item -ItemType Directory -Path $buildPath | Out-Null
 $previousSigningMode = $env:YAWMI_SIGNING_MODE
 $previousUpdateMode = $env:YAWMI_GITHUB_UPDATES
+$previousFirebase = @{}
+foreach ($key in $firebase.Keys) {
+    $previousFirebase[$key] = [Environment]::GetEnvironmentVariable($key, 'Process')
+    [Environment]::SetEnvironmentVariable($key, $firebase[$key], 'Process')
+}
 $env:YAWMI_GITHUB_UPDATES = if ($GithubUpdates) { 'true' } else { 'false' }
 $env:YAWMI_SIGNING_MODE = if ($Distribution) { 'release' }
     elseif ($Format -eq 'AAB') { 'unsigned' }
@@ -79,6 +101,9 @@ try {
 } finally {
     $env:YAWMI_SIGNING_MODE = $previousSigningMode
     $env:YAWMI_GITHUB_UPDATES = $previousUpdateMode
+    foreach ($key in $previousFirebase.Keys) {
+        [Environment]::SetEnvironmentVariable($key, $previousFirebase[$key], 'Process')
+    }
     $resolvedBuild = [IO.Path]::GetFullPath((Resolve-Path -LiteralPath $buildPath).ProviderPath)
     if ($resolvedBuild -eq $buildPath -and
         $resolvedBuild.StartsWith((Join-Path $tempRoot 'YawmiBuild-'), [StringComparison]::OrdinalIgnoreCase)) {

@@ -34,6 +34,15 @@ extension _Screens on _HomeState {
       child: Scaffold(
         appBar: AppBar(
           automaticallyImplyLeading: false,
+          actions: [
+            if (widget.db is ProfileJournal &&
+                (widget.db as ProfileJournal).profiles.length > 1)
+              IconButton(
+                tooltip: t('بدّل ملف المتابعة', 'Switch profile'),
+                icon: const Icon(Icons.switch_account_outlined),
+                onPressed: _showProfiles,
+              ),
+          ],
           title: Row(
             children: [
               if (!onWelcome)
@@ -383,15 +392,26 @@ extension _Screens on _HomeState {
     return ListView(
       padding: const EdgeInsets.fromLTRB(18, 7, 18, 34),
       children: [
-        _todayMasthead(
-          date,
-          current,
-          recent.length,
-          hasMedicine ? pending.length : null,
-          hasLate: first != null && now.difference(first.at).inMinutes > 0,
-        ),
-        const SizedBox(height: 9),
+        _todayHeader(date, current),
+        if (_availableUpdate != null) _releaseBanner(),
+        if (current && section == 0)
+          _dailyAgenda(first, showDoses: hasMedicine),
+        if (current &&
+            section == 0 &&
+            cards.any((id) => id != medicineCard)) ...[
+          const SizedBox(height: 8),
+          _todayActions(cards),
+        ],
+        if (current && section == 0) _upcomingAgenda(agenda, first),
+        const SizedBox(height: 12),
         _dateTrack(date),
+        if (current)
+          _todayContext(
+            date,
+            recent.length,
+            hasMedicine ? pending.length : null,
+            hasLate: first != null && now.difference(first.at).inMinutes > 0,
+          ),
         if (!current)
           Align(
             alignment: AlignmentDirectional.centerStart,
@@ -404,15 +424,6 @@ extension _Screens on _HomeState {
               label: Text(t('ارجع لليوم', 'Back to today')),
             ),
           ),
-        if (current && section == 0)
-          _dailyAgenda(first, showDoses: hasMedicine),
-        if (current &&
-            section == 0 &&
-            cards.any((id) => id != medicineCard)) ...[
-          const SizedBox(height: 14),
-          _todayActions(cards),
-        ],
-        if (current && section == 0) _upcomingAgenda(agenda, first),
         if (current && section == 0 && data['earlyCustomization'] == true)
           ControlCard(
             title: t('اختار حالاتك الصحية', 'Choose your health conditions'),

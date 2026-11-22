@@ -5,11 +5,20 @@ Widget _careTextField(
   String initial,
   ValueChanged<String> change, {
   bool numeric = false,
+  int lines = 1,
+  Key? fieldKey,
 }) => Padding(
   padding: const EdgeInsets.only(bottom: 8),
   child: TextFormField(
+    key: fieldKey,
     initialValue: initial,
-    maxLength: numeric ? 18 : 140,
+    maxLength: numeric
+        ? 18
+        : lines > 1
+        ? 700
+        : 140,
+    minLines: lines,
+    maxLines: lines + (lines > 1 ? 2 : 0),
     keyboardType: numeric
         ? const TextInputType.numberWithOptions(decimal: true, signed: true)
         : TextInputType.text,
@@ -415,6 +424,24 @@ extension _Care on _HomeState {
                 icon: const Icon(Icons.description_outlined),
                 label: Text(t('جهّز ملخص الزيارة', 'Prepare visit summary')),
               ),
+              ControlCard(
+                title: t('خط المتابعة', 'Care timeline'),
+                subtitle: t(
+                  'راجع القياسات والتغييرات بالترتيب.',
+                  'Review readings and care changes in order.',
+                ),
+                icon: Icons.timeline_rounded,
+                onTap: _timeline,
+              ),
+              ControlCard(
+                title: t('زياراتي', 'Visits'),
+                subtitle: t(
+                  'الأسئلة والنتايج والمتابعة لكل زيارة.',
+                  'Questions, results, and follow-up for each visit.',
+                ),
+                icon: Icons.event_note_outlined,
+                onTap: _visits,
+              ),
             ],
           ),
         );
@@ -515,6 +542,7 @@ extension _Care on _HomeState {
                           'measure': measure.trim(),
                           'timing': timing.trim(),
                           'target': target.trim(),
+                          'updatedAt': DateTime.now().toUtc().toIso8601String(),
                           if (review != null) 'review': dayKey(review!),
                         };
                       }

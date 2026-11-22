@@ -81,6 +81,11 @@ List<JournalRow> notificationRules(
         'start': r['start'],
         'end': r['end'],
         'effective': r['effective'],
+        if (r['shiftMinutes'] != null) ...{
+          'shiftMinutes': r['shiftMinutes'],
+          'shiftStart': r['shiftStart'],
+          'shiftEnd': r['shiftEnd'],
+        },
         if (r['maxDelay'] != null) 'maxDelay': r['maxDelay'],
         'type': r['tracker'] == 'water' || r['tracker'] == 'sleep'
             ? 'habit'
@@ -95,7 +100,7 @@ List<JournalRow> notificationRules(
         if (r['repeat'] != null) 'repeat': r['repeat'],
       },
     for (final med in meds.where((m) => m['archived'] != true)) ...[
-      ..._stockReminderRules(med, doses, ar),
+      ..._stockReminderRules(med, doses, ar, now),
       if (DateAlert.read(med['expiry']) case final expiry?)
         ...dateAlertRules(
           expiry,
@@ -171,11 +176,34 @@ Iterable<JournalRow> _stockReminderRules(
   JournalRow med,
   List<JournalRow> doses,
   bool ar,
+  DateTime now,
 ) sync* {
   final balance = medicationStockBalance(med, doses);
-  if (balance == null || !balance.stock.notify || balance.lowSince == null) {
-    return;
+  if (balance == null) return;
+  final lead = med['forecastLead'];
+  if (lead is int && _forecastLeadDays.contains(lead)) {
+    final date = projectedRefill(med, balance, now, doses: doses);
+    if (date != null) {
+      final target = shiftCalendarDate(date, -lead);
+      final today = DateUtils.dateOnly(now);
+      final scheduled = target.isBefore(today) ? today : target;
+      final at = DateTime(scheduled.year, scheduled.month, scheduled.day, 9);
+      yield {
+        'id': 'forecast:${med['id']}:${balance.stock.cycle}:$lead',
+        'stableOnce': true,
+        'type': 'tracking',
+        'when': at.toUtc().toIso8601String(),
+        'graceMinutes': 900,
+        'route': 'stock/${med['id']}',
+        'title': tr(
+          ar,
+          'راجع موعد نفاد مخزون الدوا',
+          'Review estimated medication runout',
+        ),
+      };
+    }
   }
+  if (!balance.stock.notify || balance.lowSince == null) return;
   final lowSince = balance.lowSince!;
   final enabledAt = balance.stock.alertsEnabledAt;
   final first = enabledAt != null && enabledAt.isAfter(lowSince)
@@ -585,11 +613,11 @@ extension _Routine on _HomeState {
 
   Future<void> _notificationDiagnostics() async {
     var channel = 'tracking';
-    Future<JournalRow?> status([bool test = false]) async {
+    Future<JournalRow?> status({bool test = false, bool locked = false}) async {
       try {
         return await platform.invokeMapMethod<String, dynamic>(
           test ? 'testNotification' : 'notificationDiagnostics',
-          test ? {'arabic': ar, 'channel': channel} : null,
+          test ? {'arabic': ar, 'channel': channel, 'locked': locked} : null,
         );
       } catch (_) {
         return null;
@@ -611,10 +639,13 @@ extension _Routine on _HomeState {
       await _sheet<void>(
         (_) => StatefulBuilder(
           builder: (c, redraw) {
-            Future<void> refresh({bool test = false}) async {
+            Future<void> refresh({
+              bool test = false,
+              bool locked = false,
+            }) async {
               if (busy) return;
               redraw(() => busy = true);
-              final next = await status(test);
+              final next = await status(test: test, locked: locked);
               if (!c.mounted) return;
               redraw(() {
                 reading = next;
@@ -631,8 +662,8 @@ extension _Routine on _HomeState {
             });
             final result = switch (reading?['state']) {
               'queuedExact' => t(
-                'متجدول بعد ١٠ ثواني',
-                'Scheduled in 10 seconds',
+                'متجدول للوقت الموضّح',
+                'Scheduled for the time shown',
               ),
               'queuedApproximate' => t(
                 'متجدول · أندرويد ممكن يأخّره',
@@ -740,10 +771,72 @@ extension _Routine on _HomeState {
                       t('جدول تنبيه تجريبي', 'Schedule a test notification'),
                     ),
                   ),
+                  OutlinedButton.icon(
+                    onPressed: busy
+                        ? null
+                        : () async {
+                            await refresh(test: true, locked: true);
+                            if (c.mounted)
+                              _toast(
+                                t(
+                                  'اقفل الشاشة دلوقتي وراجع بعد دقيقة.',
+                                  'Lock the screen now and check after a minute.',
+                                ),
+                              );
+                          },
+                    icon: const Icon(Icons.lock_clock_outlined),
+                    label: Text(
+                      t(
+                        'اختبار والشاشة مقفولة · بعد دقيقة',
+                        'Lock-screen test · in one minute',
+                      ),
+                    ),
+                  ),
                   TextButton(
                     onPressed: busy ? null : () => refresh(),
                     child: Text(t('حدّث الحالة', 'Refresh status')),
                   ),
+                  SectionTitle(
+                    t('آخر طلبات عرض التنبيه', 'Recent notification requests'),
+                  ),
+                  if ((reading?['audit'] as List? ?? []).isEmpty)
+                    Text(
+                      t(
+                        'لسه مفيش طلبات في السجل.',
+                        'There are no requests in the log yet.',
+                      ),
+                    ),
+                  for (final item in (reading?['audit'] as List? ?? []).take(
+                    15,
+                  ))
+                    ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(
+                        item['state'] == 'posted'
+                            ? Icons.check_circle_outline
+                            : Icons.schedule_outlined,
+                      ),
+                      title: Text(switch (item['kind']) {
+                        'test' => t('اختبار', 'Test'),
+                        'medicine' => t('دوا', 'Medication'),
+                        'habit' => t('مياه وعادات', 'Water and habits'),
+                        _ => t('متابعة', 'Tracking'),
+                      }),
+                      subtitle: Text(
+                        [
+                          '${t('الموعد', 'Scheduled')} · ${stamp(item['due'])}',
+                          if (item['state'] == 'posted')
+                            '${t('طلب العرض', 'Posted to Android')} · ${stamp(item['actual'])} · ${math.max(0, ((item['actual'] as int) - (item['due'] as int)) ~/ 1000)} ${t('ث', 'sec')}',
+                          if (item['state'] == 'blocked')
+                            t('الإذن مقفول', 'Permission blocked'),
+                          if (item['state'] == 'channelBlocked')
+                            t('القناة مقفولة', 'Channel blocked'),
+                          if ((item['state'] as String).startsWith('queued'))
+                            t('اتجدول', 'Queued'),
+                        ].join('\n'),
+                      ),
+                    ),
                 ],
               ),
             );
@@ -956,6 +1049,7 @@ extension _Routine on _HomeState {
 
   Future<void> _medicine({JournalRow? existing}) async {
     var name = existing?['name'] as String? ?? '';
+    var scanRevision = 0;
     var directions = existing?['directions'] as String? ?? '';
     var amount = existing?['amount'] as String? ?? '';
     var strength = existing?['strength'] as String? ?? '';
@@ -1000,7 +1094,33 @@ extension _Routine on _HomeState {
                   accent: mint,
                 ),
                 const SizedBox(height: 16),
+                if (Platform.isAndroid)
+                  Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: OutlinedButton.icon(
+                      onPressed: busy
+                          ? null
+                          : () async {
+                              final scan = await _scanFields({
+                                'name': (
+                                  t('اسم الدوا', 'Medication name'),
+                                  ScanField.label,
+                                ),
+                              });
+                              if (!c.mounted || scan?['name'] == null) return;
+                              redraw(() {
+                                name = scan!['name']!;
+                                scanRevision++;
+                              });
+                            },
+                      icon: const Icon(Icons.document_scanner_outlined),
+                      label: Text(
+                        t('اقرأ الاسم من العبوة', 'Read name from package'),
+                      ),
+                    ),
+                  ),
                 TextFormField(
+                  key: ValueKey(('medicine-name', scanRevision)),
                   initialValue: name,
                   maxLength: 100,
                   onChanged: (v) => name = v,
@@ -1791,6 +1911,7 @@ extension _Routine on _HomeState {
   }
 
   void _doseSaved(String id, String token, {required bool taken}) {
+    if (taken && mounted) _redraw(() => _recentDoseId = id);
     unawaited(HapticFeedback.lightImpact());
     _toast(
       t('اتحفظ إجراء الجرعة', 'Dose action saved'),
@@ -1837,6 +1958,7 @@ extension _Routine on _HomeState {
               subtitle: [
                 t('موعد الجرعة', 'Scheduled dose'),
                 clockText(dose.minute),
+                ?_profileName,
                 ?doseMealLabel(dose.mealSlot, ar),
               ].join(' · '),
               icon: Icons.medication_outlined,

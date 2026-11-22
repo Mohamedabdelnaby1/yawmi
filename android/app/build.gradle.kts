@@ -6,16 +6,31 @@ plugins {
 
 val yawmiSigningMode = providers.environmentVariable("YAWMI_SIGNING_MODE").orElse("testing").get()
 val githubUpdates = providers.environmentVariable("YAWMI_GITHUB_UPDATES").orElse("false").get() == "true"
+val pushProject = providers.environmentVariable("YAWMI_FCM_PROJECT_ID").orElse("").get()
+val pushApp = providers.environmentVariable("YAWMI_FCM_APP_ID").orElse("").get()
+val pushKey = providers.environmentVariable("YAWMI_FCM_API_KEY").orElse("").get()
+val pushSettings = listOf(pushProject, pushApp, pushKey)
+val releasePush = githubUpdates && pushSettings.all { it.isNotBlank() }
+require(!githubUpdates || pushSettings.all { it.isBlank() } || releasePush) { "Incomplete Firebase update configuration." }
+if (releasePush) {
+    require(pushProject.matches(Regex("[a-z][a-z0-9-]{4,29}")) &&
+        pushApp.matches(Regex("1:[0-9]+:android:[0-9a-f]+")) &&
+        pushKey.matches(Regex("[A-Za-z0-9_-]{30,80}"))) { "Invalid Firebase client configuration." }
+}
 require(yawmiSigningMode in setOf("testing", "unsigned", "release")) { "Invalid YAWMI_SIGNING_MODE." }
 
 android {
     namespace = "app.yawmi.journal"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
-    buildFeatures { buildConfig = true }
+    buildFeatures {
+        buildConfig = true
+        resValues = releasePush
+    }
     if (githubUpdates) {
         sourceSets.getByName("release").manifest.srcFile("src/github/AndroidManifest.xml")
     }
+    sourceSets.getByName("main").java.srcDir(if (releasePush) "src/push/kotlin" else "src/noPush/kotlin")
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -36,6 +51,13 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         buildConfigField("boolean", "GITHUB_UPDATES", githubUpdates.toString())
+        manifestPlaceholders["releasePush"] = releasePush.toString()
+        if (releasePush) {
+            resValue("string", "google_app_id", pushApp)
+            resValue("string", "google_api_key", pushKey)
+            resValue("string", "gcm_defaultSenderId", pushApp.split(':')[1])
+            resValue("string", "project_id", pushProject)
+        }
     }
 
     if (yawmiSigningMode == "release") {
@@ -67,6 +89,11 @@ kotlin {
     compilerOptions {
         jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
     }
+}
+
+dependencies {
+    implementation("com.google.mlkit:text-recognition:16.0.1")
+    if (releasePush) implementation("com.google.firebase:firebase-messaging:25.0.1")
 }
 
 flutter {

@@ -115,6 +115,7 @@ JournalRow _validate(JournalRow raw) {
     'doses',
     'reminders',
     if (raw['followUps'] != null) 'followUps',
+    if (raw['visits'] != null) 'visits',
   ]) {
     require(raw[k] is List);
     final collection = rows(raw[k]);
@@ -266,6 +267,7 @@ JournalRow _validate(JournalRow raw) {
       require(stock != null);
       m['inventory'] = {...stock!.toRow(), 'notify': false};
     }
+    m.remove('forecastLead');
     if (m['expiry'] != null) {
       final alert = DateAlert.read(m['expiry']);
       require(alert != null);
@@ -309,6 +311,20 @@ JournalRow _validate(JournalRow raw) {
     plan['alert'] = alert!.toRow(pause: true);
   }
   clean['followUps'] = followUps;
+  for (final visit in rows(clean['visits'])) {
+    require(
+      text(visit['name']) &&
+          day(visit['date']) &&
+          (visit['condition'] == null || text(visit['condition'])) &&
+          text(visit['questions']) &&
+          text(visit['outcome']) &&
+          (visit['followUp'] == null || text(visit['followUp'])) &&
+          (visit['reviewedAt'] == null || stamp(visit['reviewedAt'])) &&
+          visit['linkedEntries'] is List &&
+          (visit['linkedEntries'] as List).length <= 80 &&
+          (visit['linkedEntries'] as List).every(text),
+    );
+  }
   for (final d in rows(clean['doses'])) {
     require(
       text(d['name']) &&
@@ -437,7 +453,17 @@ JournalRow _validate(JournalRow raw) {
           plan.key: {
             for (final key in ['measure', 'timing', 'target', 'review'])
               if (plan.value[key] != null) key: plan.value[key],
+            if (stamp(plan.value['updatedAt']))
+              'updatedAt': plan.value['updatedAt'],
           },
+    };
+  }
+  if (raw['routineShifts'] case final Map shifts) {
+    clean['routineShifts'] = {
+      for (final mode in routineModes)
+        if (shifts[mode] case final int shift
+            when shift.abs() <= 180 && shift % 30 == 0)
+          mode: shift,
     };
   }
   clean['glucoseAverage'] = raw['glucoseAverage'] == true;

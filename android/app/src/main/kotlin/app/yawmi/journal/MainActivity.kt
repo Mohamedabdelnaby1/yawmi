@@ -18,6 +18,7 @@ class MainActivity : FlutterActivity() {
     }
     private lateinit var bridge: MethodChannel
     private var route: String? = null
+    private val scanner by lazy { YawmiScan(this) }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -26,6 +27,8 @@ class MainActivity : FlutterActivity() {
         bridge.setMethodCallHandler { call, result ->
             try {
                 when (call.method) {
+                    "scanCamera" -> scanner.capture(result)
+                    "scanImage" -> scanner.readFile(call.arguments as String, result)
                     "takeRoute" -> { result.success(route); route = null }
                     "healthStatus" -> result.success(mapOf(
                         "available" to (Build.VERSION.SDK_INT >= 34 && YawmiHealthConnect.available(this)),
@@ -87,7 +90,8 @@ class MainActivity : FlutterActivity() {
                     }
                     "notificationDiagnostics" -> result.success(YawmiAlarms.diagnostics(this))
                     "testNotification" -> result.success(YawmiAlarms.test(this,
-                        call.argument<Boolean>("arabic") == true, call.argument<String>("channel")))
+                        call.argument<Boolean>("arabic") == true, call.argument<String>("channel"),
+                        call.argument<Boolean>("locked") == true))
                     "settings" -> {
                         startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName))
                         result.success(null)
@@ -145,6 +149,12 @@ class MainActivity : FlutterActivity() {
         setIntent(intent)
         val next = routeFrom(intent) ?: return
         if (::bridge.isInitialized) bridge.invokeMethod("open", next) else route = next
+    }
+
+    @Deprecated("Uses the camera app's activity result.")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == YawmiScan.REQUEST) scanner.finished(resultCode)
     }
 
     private fun pin(layout: String): Boolean {

@@ -45,8 +45,16 @@ internal class WidgetSpace(size: SizeF, val layout: JSONObject, private val syst
     val refresh = (clock || !slim) && layout.optBoolean("showRefresh", true) && width >= if (clock) 350 else 177
     val header = clock || heading || toolbar || refresh
     val toolsWidth = (if (toolbar) 48f else 0f) + (if (refresh) 48f else 0f)
-    val shortcut = layout.optJSONObject("shortcut")?.takeIf {
-        it.optString("label").isNotBlank() && it.optString("route").isNotBlank()
+    val shortcut = (if (height >= 260) layout.optJSONObject("upcoming") else null)
+        ?: layout.optJSONObject("shortcut")
+    val isUpcoming = (shortcut?.optInt("minute", -1) ?: -1) in 0..1439
+    val shortcutLabel: String get() {
+        val label = shortcut?.optString("label").orEmpty()
+        if (!isUpcoming) return label
+        val minute = shortcut!!.getInt("minute")
+        return "$label · " + widgetClockText(
+            LocalTime.of(minute / 60, minute % 60), timeLanguage, timeFormat, system24, showPeriod = true
+        )
     }
     val footer = height >= 170 && !narrow && shortcut != null
     val gap = 6f
@@ -170,7 +178,9 @@ internal class WidgetArtwork(
         if (space.clock) {
             drawClock(canvas, day)
         } else if (space.heading) {
-            val title = space.layout.optString("heading").ifBlank { if (ar) "يومي" else "Yawmi" }
+            val title = space.layout.optString("ownerName").ifBlank {
+                space.layout.optString("heading").ifBlank { if (ar) "يومي" else "Yawmi" }
+            }
             val area = RectF(space.inset + 5, space.inset, w - space.inset - 5, space.top)
             if (ar) area.left += space.toolsWidth else area.right -= space.toolsWidth
             text(canvas, title, area, if (space.narrow) 13f else 19f, ink, true, middle = true)
@@ -216,7 +226,8 @@ internal class WidgetArtwork(
             inset(8f, 0f)
             if (words.arabic) right -= 33 else left += 33
         }
-        text(canvas, words.weekday, RectF(line).apply { top = y - 13; bottom = y }, 10f,
+        text(canvas, space.layout.optString("ownerName").ifBlank { words.weekday },
+            RectF(line).apply { top = y - 13; bottom = y }, 10f,
             mix(ink, base, .20f), rtl = words.arabic)
         text(canvas, words.line, RectF(line).apply { top = y - 1; bottom = y + 15 }, 14f, ink,
             strong = true, rtl = words.arabic)
@@ -240,11 +251,11 @@ internal class WidgetArtwork(
         val color = if (dark) navy else Color.WHITE
         val route = space.shortcut?.optString("route")
         panel(canvas, area, button, space.panelCorner(area))
-        glyph(canvas, if (route == "routine") "clock" else "add",
+        glyph(canvas, if (route == "routine" || space.isUpcoming) "clock" else "add",
             if (ar) area.right - 18 else area.left + 18, area.centerY(), 8f, color)
         area.inset(10f, 0f)
         if (ar) area.right -= 24 else area.left += 24
-        text(canvas, space.shortcut?.optString("label").orEmpty(), area, 14f, color, true, middle = true)
+        text(canvas, space.shortcutLabel, area, 14f, color, true, middle = true)
     }
 
     private fun drawCard(canvas: Canvas, box: RectF, card: JSONObject) {

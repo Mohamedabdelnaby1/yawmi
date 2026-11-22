@@ -6,6 +6,7 @@ import 'care_data.dart';
 const repeatIntervals = [10, 15, 20, 30, 45, 60];
 const waterIntervals = [30, 45, 60, 90, 120, 150, 180, 240];
 const firstWaterDelays = [0, 15, 30, 60];
+const routineModes = ['work', 'dayOff', 'travel'];
 
 typedef ReminderRepeat = ({int count, int minutes});
 typedef WaterSlot = ({int minute, int shift, int untilSleep});
@@ -88,7 +89,7 @@ List<JournalRow> trackingSchedules(JournalRow state, bool ar) {
           water['first'],
         )
       : const <WaterSlot>[];
-  return [
+  final schedules = <JournalRow>[
     for (final rule in rows(
       state['reminders'],
     ).where((row) => row['enabled'] == true))
@@ -113,4 +114,61 @@ List<JournalRow> trackingSchedules(JournalRow state, bool ar) {
           'effective': water['effective'],
         },
   ];
+  final override = state['routineMode'];
+  if (override is! Map || !routineModes.contains(override['id']))
+    return schedules;
+  final shift = override['shift'];
+  final start = override['start'];
+  final end = override['end'];
+  if (shift is! int ||
+      shift == 0 ||
+      shift.abs() > 180 ||
+      start is! String ||
+      end is! String)
+    return schedules;
+  return [
+    for (final rule in schedules)
+      if (rule['waterPlan'] == true ||
+          ['suggest', 'auto'].contains(rule['learn']))
+        {...rule, 'shiftMinutes': shift, 'shiftStart': start, 'shiftEnd': end}
+      else
+        rule,
+  ];
+}
+
+int reminderMinuteOn(JournalRow rule, String date, int base) {
+  final start = rule['shiftStart'];
+  final end = rule['shiftEnd'];
+  final shift = rule['shiftMinutes'];
+  if (shift is! int ||
+      start is! String ||
+      end is! String ||
+      date.compareTo(start) < 0 ||
+      date.compareTo(end) > 0)
+    return base;
+  final candidate = base + shift;
+  return candidate >= 0 && candidate < 1440 ? candidate : base;
+}
+
+DateTime? reminderTimeOn(JournalRow rule, DateTime day) {
+  final date = dayKey(day);
+  final minute = rule['minute'];
+  if (rule['enabled'] != true ||
+      minute is! int ||
+      minute < 0 ||
+      minute >= 1440 ||
+      !ints(rule['days']).contains(day.weekday) ||
+      (rule['start'] is String && date.compareTo(rule['start']) < 0) ||
+      (rule['end'] is String && date.compareTo(rule['end']) > 0))
+    return null;
+  final adjusted = reminderMinuteOn(rule, date, minute);
+  final at = DateTime(
+    day.year,
+    day.month,
+    day.day,
+    adjusted ~/ 60,
+    adjusted % 60,
+  );
+  final effective = DateTime.tryParse(rule['effective'] as String? ?? '');
+  return effective != null && at.isBefore(effective) ? null : at;
 }

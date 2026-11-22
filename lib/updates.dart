@@ -34,15 +34,53 @@ extension _AppUpdates on _HomeState {
     }
   }
 
-  Future<void> _openUpdates() async {
-    await _page<void>((_) => YawmiUpdateCenter(ar: ar));
+  Future<void> _openUpdates({bool download = false}) async {
+    await _page<void>(
+      (_) => YawmiUpdateCenter(ar: ar, downloadOnOpen: download),
+    );
     if (mounted) unawaited(_refreshUpdateOffer());
   }
+
+  Widget _releaseBanner() => Card(
+    key: const ValueKey('update-now-banner'),
+    color: Theme.of(context).colorScheme.primaryContainer,
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(13, 8, 13, 8),
+      child: Wrap(
+        spacing: 10,
+        runSpacing: 4,
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Text(
+            t(
+              'تحديث يومي $_availableUpdate جاهز',
+              'Yawmi $_availableUpdate is ready',
+            ),
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              color: Theme.of(context).colorScheme.onPrimaryContainer,
+            ),
+          ),
+          FilledButton.icon(
+            onPressed: () => _openUpdates(download: true),
+            icon: const Icon(Icons.system_update_rounded),
+            label: Text(t('حدّث دلوقتي', 'Update now')),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class YawmiUpdateCenter extends StatefulWidget {
-  const YawmiUpdateCenter({super.key, required this.ar});
+  const YawmiUpdateCenter({
+    super.key,
+    required this.ar,
+    this.downloadOnOpen = false,
+  });
   final bool ar;
+  final bool downloadOnOpen;
 
   @override
   State<YawmiUpdateCenter> createState() => _UpdateCenterState();
@@ -55,12 +93,14 @@ class _UpdateCenterState extends State<YawmiUpdateCenter>
   bool _busy = false;
   bool _unreachable = false;
   bool _waitingForPermission = false;
+  bool _startDownload = false;
   String t(String ar, String en) => tr(widget.ar, ar, en);
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _startDownload = widget.downloadOnOpen;
     unawaited(_refresh());
   }
 
@@ -89,6 +129,9 @@ class _UpdateCenterState extends State<YawmiUpdateCenter>
       });
       if (_checking || _downloading) {
         _poll = Timer(const Duration(milliseconds: 500), _refresh);
+      } else if (_startDownload && _status['version'] != null) {
+        _startDownload = false;
+        if (!_ready) unawaited(_action('downloadUpdate'));
       }
     } catch (_) {
       if (mounted) setState(() => _unreachable = true);
@@ -127,7 +170,11 @@ class _UpdateCenterState extends State<YawmiUpdateCenter>
     final error = _status['error'] as String?;
     final checkFailed = _unreachable || error == 'check';
     final notes = (_status['notes'] as String? ?? '').split(
-      RegExp(r'^#{1,6} English\s*$', multiLine: true),
+      RegExp(
+        r'^#{1,6}\s+(?:English|Yawmi[^\r\n]*)\s*$',
+        multiLine: true,
+        caseSensitive: false,
+      ),
     );
     final summary = (widget.ar ? notes.first : notes.last)
         .replaceAll(RegExp(r'[*#`]+'), '')
@@ -158,8 +205,12 @@ class _UpdateCenterState extends State<YawmiUpdateCenter>
               title: Text(t('فحص التحديثات تلقائيًا', 'Check automatically')),
               subtitle: Text(
                 t(
-                  'يومي بيشوف لو فيه إصدار جديد لما تفتحه، وبيفحص من وقت للتاني.',
-                  'Yawmi checks on launch and periodically in the background.',
+                  _status['push'] == true
+                      ? 'يومي يستقبل تنبيه الإصدار وبيتأكد منه على GitHub.'
+                      : 'يومي بيفحص لما تفتحه، وفي الخلفية حسب وقت أندرويد.',
+                  _status['push'] == true
+                      ? 'Yawmi receives release alerts and verifies them on GitHub.'
+                      : 'Yawmi checks on open and in the background as Android allows.',
                 ),
               ),
               value: _status['automatic'] == true,

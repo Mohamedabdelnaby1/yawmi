@@ -707,6 +707,37 @@ typedef StockBalance = ({
   DateTime? lowSince,
 });
 
+/// First scheduled dose the counted stock would be insufficient to cover.
+DateTime? projectedRefill(
+  JournalRow med,
+  StockBalance balance,
+  DateTime now, {
+  Iterable<JournalRow> doses = const [],
+}) {
+  if (med['archived'] == true ||
+      ints(med['times']).isEmpty ||
+      ints(med['days']).isEmpty)
+    return null;
+  final remainingDoses =
+      ((balance.remaining + 0.00000001) / balance.stock.perDose).floor();
+  var needed = remainingDoses;
+  final scope = {
+    'meds': [med],
+  };
+  final resolved = doses.expand((row) => [row['id'], row['legacyDue']]).toSet();
+  for (var i = 0; i <= 180; i++) {
+    final day = DateTime(now.year, now.month, now.day + i);
+    final end = med['end'];
+    if (end is String && dayKey(day).compareTo(end) > 0) break;
+    for (final dose in dosesOn(scope, day)) {
+      if (dose.time.isBefore(now) || resolved.contains(dose.id)) continue;
+      if (needed == 0) return dose.time;
+      needed--;
+    }
+  }
+  return null;
+}
+
 StockBalance? medicationStockBalance(
   JournalRow med,
   Iterable<JournalRow> doses,

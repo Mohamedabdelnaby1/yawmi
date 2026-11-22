@@ -88,6 +88,7 @@ internal object YawmiAlarms {
             merged[id] = JSONObject()
                 .put("id", id).put("when", Instant.ofEpochMilli(due).toString())
                 .put("type", "medicine").put("route", "dose/$key")
+                .put("owner", original.optString("owner"))
                 .put("quiet", original.optJSONObject("quiet"))
                 .put("repeatCount", original.optInt("repeatCount"))
                 .put("repeatMinutes", original.optInt("repeatMinutes", 15))
@@ -198,6 +199,9 @@ internal object YawmiAlarms {
         val effective = if (rule.isNull("effective")) null else Instant.parse(rule.getString("effective"))
         val first = maxOf(earliest, start, effective?.atZone(zone)?.toLocalDate() ?: earliest)
         val minute = rule.getInt("minute")
+        val shift = rule.optInt("shiftMinutes").coerceIn(-180, 180)
+        val shiftStart = if (shift == 0) null else runCatching { LocalDate.parse(rule.optString("shiftStart")) }.getOrNull()
+        val shiftEnd = if (shift == 0) null else runCatching { LocalDate.parse(rule.optString("shiftEnd")) }.getOrNull()
         val days = rule.getJSONArray("days")
         val allowedDays = List(days.length()) { days.getInt(it) }
         val medicine = rule.optString("medicine")
@@ -211,7 +215,9 @@ internal object YawmiAlarms {
                 val daysSinceFirst = ChronoUnit.DAYS.between(start, day)
                 if (daysSinceFirst <= 0 || daysSinceFirst % intervalDays != 0L) continue
             }
-            val instant = resolveLocal(day.atTime(minute / 60, minute % 60), zone)
+            val adjusted = if (shiftStart != null && shiftEnd != null && day >= shiftStart &&
+                day <= shiftEnd && (minute + shift) in 0..1439) minute + shift else minute
+            val instant = resolveLocal(day.atTime(adjusted / 60, adjusted % 60), zone)
             if (effective != null && instant.isBefore(effective)) continue
             if (soonest != null && instant.toEpochMilli() > soonest.occurrence.millis) break
             val key = if (medicine.isEmpty()) "$id:$day" else
@@ -279,9 +285,29 @@ internal object YawmiAlarms {
             "scheduled" to stored.getInt("queueCount", 0),
             "next" to stored.getLong("nextReminderAt", 0L),
             "delay" to stored.getLong("lastReminderDelay", 0L),
+            "audit" to readAudit(context),
             "restricted" to (Build.VERSION.SDK_INT >= 28 &&
                 context.getSystemService(ActivityManager::class.java).isBackgroundRestricted),
             "channels" to channelStatus(context))
+    }
+
+    private fun readAudit(context: Context): List<Map<String, Any>> {
+        val log = runCatching { JSONArray(prefs(context).getString("audit", "[]")) }.getOrDefault(JSONArray())
+        return (0 until log.length()).mapNotNull { index ->
+            log.optJSONObject(index)?.let { row -> mapOf(
+                "kind" to row.optString("kind"), "state" to row.optString("state"),
+                "due" to row.optLong("due"), "actual" to row.optLong("actual")
+            ) }
+        }
+    }
+
+    private fun recordAudit(context: Context, kind: String, state: String, due: Long, actual: Long = 0L) {
+        val now = System.currentTimeMillis()
+        val log = JSONArray().put(JSONObject(mapOf("kind" to kind, "state" to state, "due" to due, "actual" to actual)))
+        readAudit(context)
+            .filter { (it["due"] as Long) >= now - KEEP_MS }
+            .take(29).forEach { log.put(JSONObject(it)) }
+        prefs(context).edit().putString("audit", log.toString()).apply()
     }
 
     fun interruptTest(context: Context) {
@@ -292,12 +318,12 @@ internal object YawmiAlarms {
         }
     }
 
-    fun test(context: Context, arabic: Boolean, requested: String?): Map<String, Any> {
+    fun test(context: Context, arabic: Boolean, requested: String?, locked: Boolean): Map<String, Any> {
         val stored = prefs(context)
         val manager = notifier(context)
         val channel = requested?.takeIf { it in setOf("medicine", "tracking", "habit") } ?: "tracking"
         channelStatus(context)
-        val due = System.currentTimeMillis() + 10_000L
+        val due = System.currentTimeMillis() + if (locked) MINUTE else 10_000L
         val state = when {
             !allowed(context) -> "blocked"
             manager.getNotificationChannel(channel)?.importance == NotificationManager.IMPORTANCE_NONE -> "channelBlocked"
@@ -306,6 +332,7 @@ internal object YawmiAlarms {
         stored.edit().putString("testState", state).putBoolean("testArabic", arabic)
             .putString("testChannel", channel)
             .putLong("testAt", if (state.startsWith("queued")) due else System.currentTimeMillis()).apply()
+        recordAudit(context, "test", state, due)
         return diagnostics(context)
     }
 
@@ -340,6 +367,7 @@ internal object YawmiAlarms {
             } catch (_: SecurityException) { "blocked" }
         }
         store.edit().putString("testState", result).putLong("testAt", System.currentTimeMillis()).apply()
+        recordAudit(context, "test", result, due, if (result == "posted") System.currentTimeMillis() else 0L)
     }
 
     private fun channelStatus(context: Context): Map<String, Boolean> {
@@ -432,6 +460,10 @@ internal object YawmiAlarms {
         val manager = notifier(context)
         val now = System.currentTimeMillis()
         val ar = store.getString("lang", "en") == "ar"
+        if (!allowed(context)) {
+            recordAudit(context, "tracking", "blocked", due)
+            return schedule(context)
+        }
         val recent = nextAlarms(context, rules, now, posted, stopped, done)
         var last: ReminderAlarm? = null
         for (next in recent.takeWhile { it.occurrence.millis <= now + 400 }.take(20)) {
@@ -448,14 +480,16 @@ internal object YawmiAlarms {
                 if (ar) "افتح يومي وشوف تفاصيل الميعاد." else "Open Yawmi to see the reminder."
             }
             val route = if (!rule.isNull("tracker") && rule.optString("tracker").isNotBlank())
-                "reminder/$ruleId/" + key.substringAfterLast(':')
+                "reminder/${rule.optString("origin", ruleId)}/" + key.substringAfterLast(':')
                 else rule.optString("route").ifEmpty { if (channel == "medicine") "dose/$key" else "routine" }
+            val owner = rule.optString("owner")
+            val scopedRoute = if (owner.isBlank()) route else "profile/$owner/$route"
             val tag = occurrenceTag(ruleId, key)
             val notice = Notification.Builder(context, if (next.occurrence.silent) "quiet" else channel)
                 .setSmallIcon(R.drawable.ic_reminder)
                 .setContentTitle(title).setContentText(description).setVisibility(Notification.VISIBILITY_PRIVATE)
                 .setShowWhen(true).setWhen(next.original)
-                .setContentIntent(appShortcut(context, route, "notification-$tag")).setAutoCancel(true)
+                .setContentIntent(appShortcut(context, scopedRoute, "notification-$tag")).setAutoCancel(true)
             if (channel == "medicine" && activeMedicineRule(rules, key) != null) {
                 notice.addAction(Notification.Action.Builder(
                     null, if (ar) "أجّل ١٠ دقايق" else "Snooze 10 min", noticeAction(context, SNOOZE_ACTION, ruleId, key)
@@ -469,8 +503,10 @@ internal object YawmiAlarms {
             try {
                 manager.notify(tag, 1, notice.build())
             } catch (_: SecurityException) {
+                recordAudit(context, channel, "blocked", next.occurrence.millis)
                 break
             }
+            recordAudit(context, channel, "posted", next.occurrence.millis, now)
             posted.put(next.identity, JSONObject().put("at", now).put("count", next.priorCount + 1))
             last = next
         }

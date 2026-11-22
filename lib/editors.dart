@@ -394,6 +394,7 @@ extension _Editors on _HomeState {
         rows(item?['conditions']).firstOrNull?['id'] as String? ??
         suggestedCondition;
     var working = false;
+    var scanRevision = 0;
     var scheduleFollowUp = false;
     final form = GlobalKey<FormState>();
     final finished = await _sheet<bool>(
@@ -662,6 +663,70 @@ extension _Editors on _HomeState {
                           )
                         : null,
                   ),
+                  if (_profileName case final name?)
+                    Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Chip(
+                        avatar: const Icon(Icons.person_outline, size: 17),
+                        label: Text(name),
+                      ),
+                    ),
+                  if (Platform.isAndroid &&
+                      ['glucose', 'pressure', 'lab'].contains(tracker.id))
+                    Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.document_scanner_outlined),
+                        label: Text(t('اقرأ من صورة', 'Read from a photo')),
+                        onPressed: working
+                            ? null
+                            : () async {
+                                final scanned = await _scanFields({
+                                  if (tracker.id == 'pressure') ...{
+                                    'systolic': (
+                                      t('الانقباضي', 'Systolic'),
+                                      ScanField.number,
+                                    ),
+                                    'diastolic': (
+                                      t('الانبساطي', 'Diastolic'),
+                                      ScanField.number,
+                                    ),
+                                  } else if (tracker.id == 'lab') ...{
+                                    'value': (
+                                      t('اسم التحليل', 'Lab name'),
+                                      ScanField.label,
+                                    ),
+                                    'labResult': (
+                                      t('النتيجة', 'Result'),
+                                      ScanField.number,
+                                    ),
+                                    'labUnit': (
+                                      t('الوحدة', 'Unit'),
+                                      ScanField.unit,
+                                    ),
+                                  } else
+                                    'value': (
+                                      t('القراءة', 'Reading'),
+                                      ScanField.number,
+                                    ),
+                                });
+                                if (scanned == null || !c.mounted) return;
+                                redraw(() {
+                                  for (final key in [
+                                    'value',
+                                    'systolic',
+                                    'diastolic',
+                                  ]) {
+                                    if (scanned[key] case final value?)
+                                      input[key] = value;
+                                  }
+                                  labResult = scanned['labResult'] ?? labResult;
+                                  labUnit = scanned['labUnit'] ?? labUnit;
+                                  scanRevision++;
+                                });
+                              },
+                      ),
+                    ),
                   const SizedBox(height: 14),
                   if (tracker.kind == 'bool')
                     SegmentedControl(
@@ -681,7 +746,7 @@ extension _Editors on _HomeState {
                         Widget field(FieldSpec field) => Padding(
                           padding: const EdgeInsets.only(bottom: 9),
                           child: TextFormField(
-                            key: ValueKey((field.id, unit)),
+                            key: ValueKey((field.id, unit, scanRevision)),
                             initialValue: input[field.id],
                             maxLength: tracker.kind == 'number' ? 18 : 250,
                             textDirection: tracker.kind == 'number'
@@ -959,11 +1024,13 @@ extension _Editors on _HomeState {
                       labResult,
                       (v) => labResult = v,
                       numeric: true,
+                      fieldKey: ValueKey(('labResult', scanRevision)),
                     ),
                     _careTextField(
                       t('الوحدة', 'Unit'),
                       labUnit,
                       (v) => labUnit = v,
+                      fieldKey: ValueKey(('labUnit', scanRevision)),
                     ),
                     _careTextField(
                       t('اسم المعمل', 'Laboratory'),
@@ -1239,6 +1306,7 @@ extension _Editors on _HomeState {
             final unit = displayUnit(data, tracker);
             final points = <(double, double)>[],
                 secondary = <(double, double)>[];
+            final pointRows = <JournalRow>[];
             final normalizedStart = DateTime.utc(
               start.year,
               start.month,
@@ -1266,6 +1334,7 @@ extension _Editors on _HomeState {
                   );
                 } else {
                   points.add((x, canonical));
+                  pointRows.add(row);
                 }
                 if (values['diastolic'] is num) {
                   secondary.add((x, (values['diastolic'] as num).toDouble()));
@@ -1279,6 +1348,12 @@ extension _Editors on _HomeState {
                 ? 0
                 : (pointIndex ?? points.length - 1).clamp(0, points.length - 1);
             final point = points.elementAtOrNull(currentPoint);
+            final focusedRow = pointRows.elementAtOrNull(currentPoint);
+            final selectedDate = focusedRow != null
+                ? eventTime(focusedRow)
+                : point == null
+                ? null
+                : shiftCalendarDate(start, point.$1.floor());
             void chooseAt(double x, double width) {
               final where =
                   ((x - 5) / math.max(1, width - 10)).clamp(0, 1) * days;
@@ -1414,9 +1489,14 @@ extension _Editors on _HomeState {
                                         alignment:
                                             AlignmentDirectional.centerStart,
                                         child: Text(
-                                          [number(point.$2), unit]
-                                              .where((v) => v.isNotEmpty)
-                                              .join(' '),
+                                          [
+                                            tracker.id == 'pressure' &&
+                                                    focusedRow?['values']['diastolic']
+                                                        is num
+                                                ? '${number(point.$2)}/${focusedRow!['values']['diastolic']}'
+                                                : number(point.$2),
+                                            unit,
+                                          ].where((v) => v.isNotEmpty).join(' '),
                                           textDirection: TextDirection.ltr,
                                           style: const TextStyle(
                                             fontFamily: 'Manrope',
@@ -1514,6 +1594,36 @@ extension _Editors on _HomeState {
                                 ),
                               ),
                             ),
+                            if (selectedDate != null)
+                              Semantics(
+                                liveRegion: true,
+                                child: Padding(
+                                  padding: const EdgeInsets.only(
+                                    top: 6,
+                                    bottom: 6,
+                                  ),
+                                  child: Text(
+                                    [
+                                          prettyDate(
+                                            selectedDate,
+                                            focusedRow == null
+                                                ? 'd MMM'
+                                                : 'd MMM · HH:mm',
+                                          ),
+                                          if (focusedRow != null)
+                                            entryContext(
+                                              focusedRow['context'],
+                                              ar,
+                                            ),
+                                        ]
+                                        .where((word) => word.isNotEmpty)
+                                        .join(' · '),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ),
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               textDirection: TextDirection.ltr,

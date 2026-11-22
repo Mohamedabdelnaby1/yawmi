@@ -9,6 +9,7 @@ import 'package:intl/intl.dart' show DateFormat;
 
 import 'design.dart';
 import 'domain.dart';
+import 'reminder_schedule.dart';
 
 const platform = MethodChannel('app.yawmi/android');
 const widgetSizes = [
@@ -279,6 +280,7 @@ List<JournalRow> restoreWidgetDesigns(JournalRow state, Object? raw) {
             'showShortcut',
             'showSettings',
             'showRefresh',
+            'showUpcoming',
           ])
             if (item[key] is bool) key: item[key],
           for (final (key, limit) in [
@@ -416,7 +418,7 @@ class WidgetScene {
       config['showRefresh'] != false &&
       viewport.width >= (clock ? 350 : 177);
   bool get header => clock || heading || toolbar || refresh;
-  bool get footer => viewport.height >= 170 && !narrow && shortcut != null;
+  bool get footer => viewport.height >= 170 && !narrow && footerAction != null;
   double get footerHeight => footer ? 54 : 0;
   int get maxColumns =>
       ((viewport.width - 2 * inset + gap) / 95).floor().clamp(1, 3);
@@ -528,6 +530,7 @@ class WidgetScene {
   }
 
   String get dateHeading => DateFormat('EEEE', dateLocale).format(now);
+  String? get ownerName => state['widgetOwnerName'] as String?;
   String get dateLine {
     final month = DateFormat(fullDate ? 'MMMM' : 'MMM', dateLocale).format(now);
     return dateArabic ? '${now.day} $month' : '$month ${now.day}';
@@ -561,6 +564,70 @@ class WidgetScene {
       ),
       _ => (label: tr(ar, 'سجّل ', 'Log ') + title(id), route: 'add/$target'),
     };
+  }
+
+  late final upcoming = _upcoming();
+
+  ({String label, String route, int minute})? _upcoming() {
+    if (config['showUpcoming'] == false) return null;
+    final preferred = cardPlan(state, config).toSet();
+    final schedules = trackingSchedules(state, ar)
+        .where(
+          (row) =>
+              preferred.contains(row['tracker']) && reveals(row['tracker']),
+        )
+        .toList();
+    final today = dayKey(now);
+    final resolved = rows(
+      state['entries'],
+    ).map((row) => row['reminderOccurrence']).toSet();
+    final matches = <(DateTime, String, String)>[];
+    for (final offset in [0, 1]) {
+      final day = DateTime(now.year, now.month, now.day + offset);
+      if (preferred.contains(medicineCard) && reveals(medicineCard)) {
+        for (final dose in outstanding(_cardState(medicineCard), day)) {
+          if (!dose.time.isBefore(now)) {
+            matches.add((
+              dose.time,
+              dose.medicine['name'] as String,
+              'dose/${dose.id}',
+            ));
+          }
+        }
+      }
+      for (final rule in schedules) {
+        final date = dayKey(day);
+        final at = reminderTimeOn(rule, day);
+        if (!resolved.contains("${rule['id']}:$date") &&
+            at != null &&
+            !at.isBefore(now)) {
+          matches.add((
+            at,
+            title(rule['tracker']),
+            "reminder/${rule['id']}/$date",
+          ));
+        }
+      }
+    }
+    matches.sort((a, b) => a.$1.compareTo(b.$1));
+    final next = matches.firstOrNull;
+    if (next == null) return null;
+    final (date, name, route) = next;
+    final label = dayKey(date) == today
+        ? tr(ar, 'الجاي · $name', 'Next · $name')
+        : tr(ar, 'بكرة · $name', 'Tomorrow · $name');
+    return (label: label, route: route, minute: date.hour * 60 + date.minute);
+  }
+
+  ({String label, String route, int? minute})? get footerAction {
+    if (viewport.height >= 260) {
+      final item = upcoming;
+      if (item != null) return item;
+    }
+    final item = shortcut;
+    return item == null
+        ? null
+        : (label: item.label, route: item.route, minute: null);
   }
 
   bool reveals(String id) =>
@@ -750,7 +817,7 @@ class SceneArt extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final grid = scene.grid;
-    final shortcut = scene.shortcut;
+    final shortcut = scene.footerAction;
     final opacity = (scene.config['opacity'] as num? ?? 1).toDouble().clamp(
       .92,
       1.0,
@@ -783,13 +850,14 @@ class SceneArt extends StatelessWidget {
                                   start: 5,
                                 ),
                                 child: Text(
-                                  scene.config['name']
-                                              ?.toString()
-                                              .trim()
-                                              .isNotEmpty ==
-                                          true
-                                      ? scene.config['name'] as String
-                                      : tr(scene.ar, 'يومي', 'Yawmi'),
+                                  scene.ownerName ??
+                                      (scene.config['name']
+                                                  ?.toString()
+                                                  .trim()
+                                                  .isNotEmpty ==
+                                              true
+                                          ? scene.config['name'] as String
+                                          : tr(scene.ar, 'يومي', 'Yawmi')),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
@@ -864,7 +932,7 @@ class SceneArt extends StatelessWidget {
                     child: Row(
                       children: [
                         Icon(
-                          shortcut.route == 'routine'
+                          shortcut.route == 'routine' || shortcut.minute != null
                               ? Icons.schedule_rounded
                               : Icons.add_rounded,
                           color: _buttonInk,
@@ -873,7 +941,9 @@ class SceneArt extends StatelessWidget {
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
-                            shortcut.label,
+                            shortcut.minute == null
+                                ? shortcut.label
+                                : '${shortcut.label} · ${scene.formatTime(DateTime(2000, 1, 1, 0, shortcut.minute!), system24: MediaQuery.alwaysUse24HourFormatOf(context), showPeriod: true)}',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
@@ -984,7 +1054,7 @@ class SceneArt extends StatelessWidget {
                 children: [
                   if (full)
                     Text(
-                      scene.dateHeading,
+                      scene.ownerName ?? scene.dateHeading,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -1427,9 +1497,18 @@ JournalRow widgetSnapshot(JournalRow state, bool ar, DateTime moment) {
           ? '${tr(scene.ar, 'تركيبة', 'Layout')} $index'
           : name,
       'heading': name.isEmpty ? tr(scene.ar, 'يومي', 'Yawmi') : name,
+      if (state['widgetOwner'] case final String owner) 'owner': owner,
+      if (state['widgetOwnerName'] case final String ownerName)
+        'ownerName': ownerName,
       'ar': scene.ar,
       if (scene.shortcut case final shortcut?)
         'shortcut': {'label': shortcut.label, 'route': shortcut.route},
+      if (scene.upcoming case final upcoming?)
+        'upcoming': {
+          'label': upcoming.label,
+          'route': upcoming.route,
+          'minute': upcoming.minute,
+        },
       'accent': scene.accent.toARGB32(),
       'columns': config['columns'],
       'featured': config['featured'] == true,

@@ -39,6 +39,9 @@ part 'follow_ups.dart';
 part 'notifications.dart';
 part 'updates.dart';
 part 'care_ui.dart';
+part 'care_journey.dart';
+part 'profiles.dart';
+part 'scan.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -120,21 +123,26 @@ class Yawmi extends StatelessWidget {
             child: content,
           );
         },
-        home: _Home(db),
+        home: _Home(
+          db,
+          key: ValueKey(
+            db is ProfileJournal ? (db as ProfileJournal).activeId : null,
+          ),
+        ),
       );
     },
   );
 }
 
 class _Home extends StatefulWidget {
-  const _Home(this.db);
+  const _Home(this.db, {super.key});
   final Journal db;
   @override
   State<_Home> createState() => _HomeState();
 }
 
 class _HomeState extends State<_Home> with WidgetsBindingObserver {
-  final _publisher = WidgetPublisher();
+  static final _publisher = WidgetPublisher();
   final _search = TextEditingController();
   final _entryDrafts = <String, JournalRow>{};
   int tab = 0, period = 0;
@@ -152,7 +160,8 @@ class _HomeState extends State<_Home> with WidgetsBindingObserver {
   bool _hasUpdateChannel = false;
   bool _syncingUpdates = false;
   String? _availableUpdate;
-  Timer? _refresh, _clock;
+  String? _recentDoseId;
+  Timer? _refresh, _clock, _updatePoll;
   DateTime now = DateTime.now();
   JournalRow get data => widget.db.state;
   void _redraw(VoidCallback action) => setState(action);
@@ -174,12 +183,15 @@ class _HomeState extends State<_Home> with WidgetsBindingObserver {
         unawaited(_autoArrange(next));
       }
     });
-    if (Platform.isAndroid) {
-      platform.setMethodCallHandler((call) async {
-        if (call.method == 'open') await _route(call.arguments as String);
-      });
-    }
-    WidgetsBinding.instance.addPostFrameCallback((_) => _resume());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (Platform.isAndroid) {
+        platform.setMethodCallHandler((call) async {
+          if (call.method == 'open') await _route(call.arguments as String);
+        });
+      }
+      _resume();
+    });
   }
 
   @override
@@ -189,13 +201,18 @@ class _HomeState extends State<_Home> with WidgetsBindingObserver {
     if (Platform.isAndroid) platform.setMethodCallHandler(null);
     _search.dispose();
     _clock?.cancel();
+    _updatePoll?.cancel();
     _refresh?.cancel();
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _resume();
+    if (state == AppLifecycleState.resumed) {
+      _resume();
+    } else {
+      _updatePoll?.cancel();
+    }
   }
 
   @override
@@ -210,8 +227,18 @@ class _HomeState extends State<_Home> with WidgetsBindingObserver {
     _changed();
     unawaited(_autoArrange(now));
     unawaited(clearSharedReports().catchError((Object _) {}));
+    if (widget.db case final ProfileJournal profiles) {
+      final pending = profiles.pendingRoute;
+      profiles.pendingRoute = null;
+      if (pending != null) unawaited(_route(pending));
+    }
     if (!Platform.isAndroid) return;
     unawaited(_refreshUpdateOffer());
+    _updatePoll?.cancel();
+    _updatePoll = Timer.periodic(
+      const Duration(minutes: 1),
+      (_) => unawaited(_refreshUpdateOffer()),
+    );
     try {
       final route = await platform.invokeMethod<String>('takeRoute');
       if (route != null && mounted) await _route(route);
@@ -227,20 +254,28 @@ class _HomeState extends State<_Home> with WidgetsBindingObserver {
       if (!mounted) return;
       await _applyAutomatic();
       if (!mounted || !Platform.isAndroid) return;
-      final state = data;
+      final journals = widget.db is ProfileJournal
+          ? (widget.db as ProfileJournal).journals.toList()
+          : [(ProfileJournal.personal, data)];
       try {
         final result = await platform.invokeMapMethod<String, bool>(
           'reconcile',
           {
-            'rules': jsonEncode(notificationRules(state, ar)),
+            'rules': jsonEncode([
+              for (final (owner, state) in journals)
+                ...rulesForProfile(state, ar, owner),
+            ]),
             'resolved': jsonEncode([
-              for (final dose in rows(state['doses'])) ...[
-                dose['id'],
-                if (dose['legacyDue'] is String) dose['legacyDue'],
+              for (final (owner, state) in journals) ...[
+                for (final dose in rows(state['doses'])) ...[
+                  dose['id'],
+                  if (dose['legacyDue'] is String) dose['legacyDue'],
+                ],
+                ...rows(state['entries'])
+                    .map(entryReminderOccurrence)
+                    .whereType<String>()
+                    .map((id) => profileRuleId(id, owner)),
               ],
-              ...rows(
-                state['entries'],
-              ).map(entryReminderOccurrence).whereType<String>(),
             ]),
             'lang': ar ? 'ar' : 'en',
           },
@@ -256,7 +291,7 @@ class _HomeState extends State<_Home> with WidgetsBindingObserver {
       }
       if (!mounted) return;
       try {
-        await _publisher.update(data, ar);
+        await _publisher.update(_widgetState, ar);
         if (mounted && _widgetError) setState(() => _widgetError = false);
       } catch (_) {
         if (mounted) setState(() => _widgetError = true);
@@ -347,9 +382,32 @@ class _HomeState extends State<_Home> with WidgetsBindingObserver {
       false;
 
   Future<void> _route(String route) async {
+    if (route.startsWith('profile/')) {
+      final parts = route.split('/');
+      if (parts.length < 3 || widget.db is! ProfileJournal) return;
+      final journal = widget.db as ProfileJournal;
+      final remaining = parts.skip(2).join('/');
+      if (!journal.profiles.any((p) => p.id == parts[1])) return;
+      if (journal.activeId != parts[1]) {
+        if (!mounted) return;
+        Navigator.of(context).popUntil((route) => route.isFirst);
+        journal.pendingRoute = remaining;
+        try {
+          await journal.switchTo(parts[1]);
+        } catch (_) {
+          journal.pendingRoute = null;
+          if (mounted)
+            _toast(t('ماقدرناش نفتح الملف', 'Could not switch profile'));
+        }
+        return;
+      }
+      route = remaining;
+    }
     if (!mounted ||
         _handlingRoute ||
-        (data['stage'] != 3 && route != 'privacy'))
+        (data['stage'] != 3 &&
+            route != 'privacy' &&
+            !route.startsWith('updates')))
       return;
     _handlingRoute = true;
     try {
@@ -373,6 +431,8 @@ class _HomeState extends State<_Home> with WidgetsBindingObserver {
           await _privacy();
         case ['updates']:
           await _openUpdates();
+        case ['updates', 'download']:
+          await _openUpdates(download: true);
         case ['stock', final id]:
           setState(() => tab = 2);
           final med = rows(

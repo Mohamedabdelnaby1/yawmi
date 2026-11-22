@@ -35,22 +35,6 @@ String? entryReminderOccurrence(JournalRow row) =>
     ? row['reminderOccurrence'] as String
     : null;
 
-DateTime? reminderTimeOn(JournalRow rule, DateTime day) {
-  final date = dayKey(day);
-  final minute = rule['minute'];
-  if (rule['enabled'] != true ||
-      minute is! int ||
-      minute < 0 ||
-      minute >= 1440 ||
-      !ints(rule['days']).contains(day.weekday) ||
-      (rule['start'] is String && date.compareTo(rule['start']) < 0) ||
-      (rule['end'] is String && date.compareTo(rule['end']) > 0))
-    return null;
-  final at = DateTime(day.year, day.month, day.day, minute ~/ 60, minute % 60);
-  final effective = DateTime.tryParse(rule['effective'] as String? ?? '');
-  return effective != null && at.isBefore(effective) ? null : at;
-}
-
 List<AgendaItem> journalAgenda(
   JournalRow state,
   DateTime from, {
@@ -328,9 +312,32 @@ extension _Daily on _HomeState {
         !rows(data['reminders']).any(
           (row) => row['tracker'] == firstTracker.id && row['enabled'] == true,
         );
+    final receipt = _recentDoseId == null
+        ? null
+        : doseEvent(data, _recentDoseId!);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        AnimatedSwitcher(
+          duration: motion(context, 320),
+          transitionBuilder: valueMotion,
+          child: receipt == null || dayKey(eventTime(receipt)) != dayKey(now)
+              ? const SizedBox.shrink()
+              : Padding(
+                  key: ValueKey(receipt['id']),
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.check_circle_outline_rounded),
+                      title: Text(t('جرعة اتسجّلت', 'Dose recorded')),
+                      subtitle: Text(_doseName(receipt)),
+                      onTap: () => _doseHistory(receipt),
+                    ),
+                  ),
+                ),
+        ),
         if (first != null) ...[
           SectionTitle(
             t('دلوقتي', 'Next action'),
@@ -341,15 +348,19 @@ extension _Daily on _HomeState {
                   )
                 : null,
           ),
-          ControlCard(
+          _featuredTodayAction(
             key: ValueKey('agenda-focus-${first.kind.name}'),
             title: first.row?['waterPlan'] == true
                 ? t('اشرب مياه', 'Drink water')
                 : first.label,
             subtitle: '${_agendaStatus(first)} · ${_agendaTime(first)}',
             icon: _agendaIcon(first),
-            tonalColor: first.at.isAfter(now) ? mint : honey,
-            toned: true,
+            tone: first.at.isAfter(now) ? mint : honey,
+            action: switch (first.kind) {
+              AgendaKind.dose => t('سجّل الجرعة', 'Log dose'),
+              AgendaKind.reminder => t('افتح التسجيل', 'Open entry'),
+              _ => t('افتح المتابعة', 'Open follow-up'),
+            },
             onTap: () => _openAgendaItem(first),
           ),
         ] else if (firstTracker != null && (needsReading || needsReminder)) ...[
@@ -393,6 +404,66 @@ extension _Daily on _HomeState {
       ],
     );
   }
+
+  Widget _featuredTodayAction({
+    required Key key,
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color tone,
+    required String action,
+    required VoidCallback onTap,
+  }) => Enter(
+    key: key,
+    child: Material(
+      color: night,
+      clipBehavior: Clip.antiAlias,
+      borderRadius: BorderRadius.circular(24),
+      child: InkWell(
+        onTap: onTap,
+        excludeFromSemantics: true,
+        child: CustomPaint(
+          painter: _FieldLines(tone, Directionality.of(context)),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 13, 16, 13),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(icon, color: tone, size: 25),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: const TextStyle(
+                          color: paper,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(subtitle, style: TextStyle(color: tone)),
+                const SizedBox(height: 8),
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: tone,
+                    foregroundColor: ink,
+                  ),
+                  onPressed: onTap,
+                  icon: const Icon(Icons.arrow_forward_rounded, size: 18),
+                  label: Text(action),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
 
   Widget _upcomingAgenda(List<AgendaItem> agenda, AgendaItem? first) {
     final other = agenda.where((item) => !identical(item, first));

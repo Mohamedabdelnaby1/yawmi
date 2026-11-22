@@ -957,7 +957,7 @@ extension _Studio on _HomeState {
         builder: (c, redraw) {
           final viewport = Size(width, height);
           final scene = WidgetScene.responsive(
-            data,
+            _widgetState,
             draft,
             ar,
             viewport,
@@ -1002,8 +1002,8 @@ extension _Studio on _HomeState {
                   }) ||
                   !c.mounted)
                 return;
-              await _publisher.update(
-                data,
+              await _HomeState._publisher.update(
+                _widgetState,
                 ar,
                 widgetId: pin ? null : widgetId,
                 layout: chosen['id'] as String,
@@ -1226,8 +1226,10 @@ extension _Studio on _HomeState {
                                     : t('ساعة', 'Clock'),
                               ),
                               selected: draft['clock'] == true,
-                              onSelected: (on) =>
-                                  redraw(() => draft['clock'] = on),
+                              onSelected: (on) => redraw(() {
+                                draft['clock'] = on;
+                                if (on) draft['featured'] = false;
+                              }),
                             ),
                             ChoiceChip(
                               label: Text(t('أعمدة تلقائية', 'Auto columns')),
@@ -1399,6 +1401,24 @@ extension _Studio on _HomeState {
                               .join(' · '),
                     ),
                   ),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    for (final (label, size) in [
+                      (t('صغير', 'Small'), const Size(166, 105)),
+                      (t('متوسط', 'Medium'), const Size(332, 144)),
+                      (t('كبير', 'Large'), const Size(332, 308)),
+                    ])
+                      ChoiceChip(
+                        label: Text(label),
+                        selected: viewport == size,
+                        onSelected: (_) => redraw(() {
+                          width = size.width;
+                          height = size.height;
+                        }),
+                      ),
+                  ],
+                ),
                 const SizedBox(height: 14),
                 if (panel == 0) ...[
                   TextFormField(
@@ -1530,6 +1550,17 @@ extension _Studio on _HomeState {
                     ),
                     value: draft['showShortcut'] != false,
                     onChanged: (on) => redraw(() => draft['showShortcut'] = on),
+                  ),
+                  SwitchListTile(
+                    secondary: const Icon(Icons.event_available_outlined),
+                    title: Text(
+                      t(
+                        'الموعد الجاي في الحجم الكبير',
+                        'Upcoming reminder on large widgets',
+                      ),
+                    ),
+                    value: draft['showUpcoming'] != false,
+                    onChanged: (on) => redraw(() => draft['showUpcoming'] = on),
                   ),
                   const SizedBox(height: 8),
                   _choiceSetting(
@@ -2000,7 +2031,11 @@ extension _Studio on _HomeState {
                     value: (draft[key] as bool?) ?? initial,
                     onChanged: enabled
                         ? (on) {
-                            updateEditor(() => draft[key] = on);
+                            updateEditor(() {
+                              draft[key] = on;
+                              if (key == 'clock' && on)
+                                draft['featured'] = false;
+                            });
                             repaint(() {});
                           }
                         : null,
@@ -2273,6 +2308,10 @@ extension _Studio on _HomeState {
           accent: lavender,
         ),
         const SizedBox(height: 12),
+        if (widget.db is ProfileJournal) ...[
+          _profileCard(),
+          const SizedBox(height: 10),
+        ],
         LayoutBuilder(
           builder: (c, box) {
             final stacked =
@@ -2372,6 +2411,20 @@ extension _Studio on _HomeState {
         ),
         const SizedBox(height: 8),
         ControlCard(
+          title: t('خط المتابعة', 'Care timeline'),
+          icon: Icons.timeline_rounded,
+          tonalColor: mint,
+          onTap: _timeline,
+        ),
+        const SizedBox(height: 8),
+        ControlCard(
+          title: t('زياراتي', 'Visits'),
+          icon: Icons.event_note_outlined,
+          tonalColor: lavender,
+          onTap: _visits,
+        ),
+        const SizedBox(height: 8),
+        ControlCard(
           title: t('ارجع لإعداد يومي', 'Reopen setup'),
           icon: Icons.replay_rounded,
           onTap: () => save((d) => d['stage'] = 1),
@@ -2383,7 +2436,7 @@ extension _Studio on _HomeState {
             onPressed: _eraseJournal,
             style: TextButton.styleFrom(foregroundColor: colors.error),
             icon: const Icon(Icons.delete_outline_rounded),
-            label: Text(t('حذف جميع بيانات يومي', 'Delete all Yawmi data')),
+            label: Text(t('حذف بيانات الملف المفتوح', 'Clear this journal')),
           ),
         ),
         const SizedBox(height: 8),

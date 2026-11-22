@@ -1,0 +1,51 @@
+name: Announce Android release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  announce:
+    if: >-
+      ${{ !github.event.release.prerelease && vars.YAWMI_FCM_PROJECT_ID != '' &&
+      vars.YAWMI_FCM_WIF_PROVIDER != '' && vars.YAWMI_FCM_SERVICE_ACCOUNT != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check signed-download assets are available
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}"
+          curl --fail --silent --show-error --location --head "$base/Yawmi-Android.apk" > /dev/null
+          curl --fail --silent --show-error --location "$base/Yawmi-Android.apk.sha256" |
+            grep -Eq '^[a-fA-F0-9]{64}[[:space:]]+Yawmi-Android.apk$'
+      - name: Authenticate with workload identity
+        id: google
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
+        with:
+          token_format: access_token
+          workload_identity_provider: ${{ vars.YAWMI_FCM_WIF_PROVIDER }}
+          service_account: ${{ vars.YAWMI_FCM_SERVICE_ACCOUNT }}
+          access_token_scopes: https://www.googleapis.com/auth/firebase.messaging
+          create_credentials_file: false
+      - name: Send release signal
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          PROJECT: ${{ vars.YAWMI_FCM_PROJECT_ID }}
+          ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
+        run: |
+          set -euo pipefail
+          [[ "$PROJECT" =~ ^[a-z][a-z0-9-]{4,29}$ ]]
+          payload="$(jq -nc --arg version "${RELEASE_TAG#v}" '{
+            message: {topic:"yawmi-release-v1", data:{version:$version},
+              android:{priority:"HIGH",collapse_key:"yawmi-release",ttl:"86400s"}}
+          }')"
+          curl --fail --silent --show-error -o /dev/null --retry 2 \
+            -H "Authorization: Bearer $ACCESS_TOKEN" -H 'Content-Type: application/json' \
+            --data "$payload" "https://fcm.googleapis.com/v1/projects/$PROJECT/messages:send"

@@ -303,7 +303,7 @@ open class YawmiWidget : AppWidgetProvider() {
                 }
                 updated.put(current)
             }
-            return JSONObject(layout.toString()).put("cards", updated)
+            return JSONObject(layout.toString()).put("cards", updated).apply { remove("upcoming") }
         }
 
         private fun art(
@@ -320,6 +320,8 @@ open class YawmiWidget : AppWidgetProvider() {
             }
             val system24 = DateFormat.is24HourFormat(context)
             val space = layout?.let { WidgetSpace(size, it, system24) }
+            val owner = layout?.optString("owner").orEmpty()
+            fun owned(route: String) = if (owner.isBlank()) route else "profile/$owner/$route"
             val visible = space != null
             val empty = when {
                 layout == null -> if (ar) "يومي · افتح التطبيق مرة واحدة" else "Yawmi · Open the app to sync"
@@ -352,13 +354,13 @@ open class YawmiWidget : AppWidgetProvider() {
                 } else {
                     views.setContentDescription(R.id.widget_clock_strip, text)
                 }
-                views.setOnClickPendingIntent(R.id.widget_clock_strip, appShortcut(context, "today", "widget-clock-$id"))
+                views.setOnClickPendingIntent(R.id.widget_clock_strip, appShortcut(context, owned("today"), "widget-clock-$id"))
             }
             val artworkKey = ArtworkKey(space.layout.toString(), size, ar, dark, density, now.toLocalDate(), system24)
             val bitmap = artwork.get(artworkKey) ?: WidgetArtwork(space, ar, dark, context.assets)
                 .bitmap(density, now.toLocalDate()).also { artwork.put(artworkKey, it) }
             views.setImageViewBitmap(R.id.widget_image, bitmap)
-            val edit = appShortcut(context, studio, "widget-studio-$id")
+            val edit = appShortcut(context, owned(studio), "widget-studio-$id")
             views.setOnClickPendingIntent(R.id.widget_image, edit)
             views.setViewVisibility(R.id.widget_chrome, View.VISIBLE)
             views.setViewPadding(R.id.widget_chrome, px(space.inset), px(space.inset), px(space.inset), px(space.inset))
@@ -381,9 +383,9 @@ open class YawmiWidget : AppWidgetProvider() {
             }
             views.setViewVisibility(R.id.widget_shortcut, if (space.footer) View.VISIBLE else View.GONE)
             if (space.footer) space.shortcut?.let { shortcut ->
-                views.setContentDescription(R.id.widget_shortcut, shortcut.getString("label"))
+                views.setContentDescription(R.id.widget_shortcut, space.shortcutLabel)
                 views.setOnClickPendingIntent(R.id.widget_shortcut,
-                    appShortcut(context, shortcut.getString("route"), "widget-action-$id"))
+                    appShortcut(context, owned(shortcut.getString("route")), "widget-action-$id"))
             }
             views.setViewPadding(R.id.widget_buttons, px(space.inset), px(space.top), px(space.inset), px(space.bottom))
             views.removeAllViews(R.id.widget_buttons)
@@ -399,7 +401,7 @@ open class YawmiWidget : AppWidgetProvider() {
                         .filter { it.isNotBlank() }.joinToString(" ")
                     cell.setContentDescription(R.id.widget_hit, label)
                     val route = card.optString("route", studio)
-                    cell.setOnClickPendingIntent(R.id.widget_hit, appShortcut(context, route, "widget-$id-$r-$c"))
+                    cell.setOnClickPendingIntent(R.id.widget_hit, appShortcut(context, owned(route), "widget-$id-$r-$c"))
                     line.addView(R.id.widget_row, cell)
                 }
                 views.addView(R.id.widget_buttons, line)

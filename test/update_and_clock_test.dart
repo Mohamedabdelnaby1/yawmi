@@ -140,6 +140,38 @@ void main() {
     },
   );
 
+  testWidgets('Update now starts the verified-release download with a tap', (
+    tester,
+  ) async {
+    final calls = <String>[];
+    var ready = false;
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(platform, (call) async {
+      calls.add(call.method);
+      if (call.method == 'downloadUpdate') ready = true;
+      if (call.method != 'updateStatus') return null;
+      return {
+        'enabled': true,
+        'automatic': true,
+        'installed': '1.6.1',
+        'version': '1.7.0',
+        'progress': -1,
+        'ready': ready,
+      };
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(platform, null));
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: YawmiUpdateCenter(ar: false, downloadOnOpen: true),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(calls.where((method) => method == 'downloadUpdate'), hasLength(1));
+    expect(calls, isNot(contains('installUpdate')));
+    expect(find.text('Install update'), findsOneWidget);
+  });
+
   testWidgets(
     'GitHub update center allows downloading and shows Android install permission',
     (tester) async {

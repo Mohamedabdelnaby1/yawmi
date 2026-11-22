@@ -45,6 +45,16 @@ extension _Adaptive on _HomeState {
                   ],
                 ),
               ),
+              ControlCard(
+                title: t('أوضاع الروتين', 'Routine modes'),
+                subtitle: t(
+                  'شغل، إجازة أو سفر بمواعيد مرنة مؤقتة.',
+                  'Temporary timing for work, days off, or travel.',
+                ),
+                icon: Icons.event_repeat_rounded,
+                tonalColor: lavender,
+                onTap: _routineModes,
+              ),
               SectionTitle(t('الاقتراحات', 'Suggestions')),
               ControlCard(
                 icon: Icons.tips_and_updates_outlined,
@@ -302,4 +312,135 @@ extension _Adaptive on _HomeState {
           e,
     ];
   });
+}
+
+extension _RoutineModesUi on _HomeState {
+  Future<void> _routineModes() async {
+    final today = DateUtils.dateOnly(DateTime.now());
+    final current = data['routineMode'] as Map?;
+    final savedShifts = Map<String, dynamic>.from(
+      data['routineShifts'] as Map? ?? {},
+    );
+    final expires = parseCalendarDate(current?['end']);
+    var selected =
+        expires != null &&
+            !expires.isBefore(today) &&
+            routineModes.contains(current?['id'])
+        ? current!['id'] as String
+        : 'normal';
+    var through = expires != null && !expires.isBefore(today) ? expires : today;
+    var offset = savedShifts[selected] is int
+        ? savedShifts[selected] as int
+        : 0;
+    await _sheet<void>(
+      (_) => StatefulBuilder(
+        builder: (c, redraw) => _JournalPanel(
+          heading: AppBar(
+            title: Text(t('أوضاع الروتين', 'Routine modes')),
+            leading: const CloseButton(),
+          ),
+          body: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.all(16),
+            children: [
+              Text(
+                t(
+                  'اختار تقديم أو تأخير تذكيرات المياه والقياسات المرنة لفترة محددة. مواعيد الدوا والمتابعات بتاريخ ثابت تفضل زي ما هي.',
+                  'Temporarily move water and flexible tracking reminders earlier or later. Medication and dated follow-ups keep their set times.',
+                ),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                children: [
+                  for (final (id, label) in [
+                    ('normal', t('مواعيدي الأصلية', 'Normal schedule')),
+                    ('work', t('يوم شغل', 'Workday')),
+                    ('dayOff', t('إجازة', 'Day off')),
+                    ('travel', t('سفر', 'Travel')),
+                  ])
+                    ChoiceChip(
+                      label: Text(label),
+                      selected: selected == id,
+                      onSelected: (_) => redraw(() {
+                        selected = id;
+                        offset = savedShifts[id] is int
+                            ? savedShifts[id] as int
+                            : 0;
+                      }),
+                    ),
+                ],
+              ),
+              if (selected != 'normal') ...[
+                const SizedBox(height: 10),
+                DropdownButtonFormField<int>(
+                  key: ValueKey(selected),
+                  initialValue: offset,
+                  decoration: InputDecoration(
+                    labelText: t('تغيير الميعاد', 'Time offset'),
+                  ),
+                  items: [
+                    for (var minutes = -180; minutes <= 180; minutes += 30)
+                      DropdownMenuItem(
+                        value: minutes,
+                        child: Text(
+                          minutes == 0
+                              ? t('نفس الميعاد', 'Same time')
+                              : minutes < 0
+                              ? t(
+                                  'بدري ${minutes.abs()} دقيقة',
+                                  '${minutes.abs()} min earlier',
+                                )
+                              : t('متأخر $minutes دقيقة', '$minutes min later'),
+                        ),
+                      ),
+                  ],
+                  onChanged: (value) => redraw(() => offset = value ?? 0),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final date = await showDatePicker(
+                      context: c,
+                      initialDate: through,
+                      firstDate: today,
+                      lastDate: shiftCalendarDate(today, 30),
+                    );
+                    if (date != null && c.mounted) redraw(() => through = date);
+                  },
+                  icon: const Icon(Icons.event_outlined),
+                  label: Text(
+                    t(
+                      'لحد ${prettyDate(through)}',
+                      'Until ${prettyDate(through)}',
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          footer: JournalButton.icon(
+            onPressed: () async {
+              final ok = await save((d) {
+                if (selected == 'normal') {
+                  d.remove('routineMode');
+                  return;
+                }
+                d['routineShifts'] = {...savedShifts, selected: offset};
+                d['routineMode'] = {
+                  'id': selected,
+                  'shift': offset,
+                  'start': dayKey(today),
+                  'end': dayKey(through),
+                };
+              });
+              if (ok && c.mounted) Navigator.pop(c);
+            },
+            icon: const Icon(Icons.check_rounded),
+            label: Text(t('طبّق الوضع', 'Apply mode')),
+          ),
+        ),
+      ),
+    );
+  }
 }

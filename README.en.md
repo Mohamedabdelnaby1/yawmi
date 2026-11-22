@@ -35,6 +35,8 @@
 - **Flexible reminders.** Schedule water reminders during waking hours, set quiet hours, and test Android notification delivery from the app.
 - **Home-screen widgets.** Pick the cards, clock, date, and shortcuts that appear on each widget.
 - **Languages and data.** Arabic and English with light and dark modes. Journal data stays on your device. Export PDF or Excel (XLSX), or create an encrypted backup.
+- **Family profiles and visits.** Keep each person's journal on the device. View readings and care changes in the timeline, and link labs and questions to a visit and its follow-up.
+- **Photo input.** Choose recognized text and values from measurement displays, lab reports, or medication packages. Review the result and unit in the form before saving.
 
 The screenshots use sample data. Yawmi is a personal logging and reminder tool.
 
