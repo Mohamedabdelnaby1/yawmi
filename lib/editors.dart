@@ -663,6 +663,31 @@ extension _Editors on _HomeState {
                           )
                         : null,
                   ),
+                  if (occurrence != null &&
+                      initialDay != null &&
+                      _unusedReminderEntries(
+                        data,
+                        tracker,
+                        initialDay,
+                        occurrence,
+                      ).isNotEmpty)
+                    Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.check_circle_outline),
+                        label: Text(t('سجّلته بالفعل', 'Already logged')),
+                        onPressed: working
+                            ? null
+                            : () async {
+                                final linked = await _linkSavedReminder(
+                                  tracker,
+                                  initialDay,
+                                  occurrence,
+                                );
+                                if (linked && c.mounted) Navigator.pop(c, true);
+                              },
+                      ),
+                    ),
                   if (_profileName case final name?)
                     Align(
                       alignment: AlignmentDirectional.centerStart,
@@ -1222,12 +1247,24 @@ extension _Editors on _HomeState {
     }
   }
 
-  Future<void> _addWater([int volume = 250, String? condition]) async {
+  Future<void> _addWater(
+    int volume, {
+    String? condition,
+    DateTime? reminderAt,
+    String? occurrence,
+  }) async {
     if (_addingWater) return;
     _redraw(() => _addingWater = true);
     final id = newId();
-    final at = DateTime.now();
+    final stamp = DateTime.now();
+    final at = reminderAt != null && dayKey(reminderAt) != dayKey(stamp)
+        ? reminderAt
+        : stamp;
+    var added = false;
     final ok = await save((d) {
+      if (occurrence != null &&
+          trackingReminderMatches(d, at).containsKey(occurrence))
+        return;
       final linked = rows(
         d['conditions'],
       ).where((c) => c['id'] == condition && c['archived'] != true).firstOrNull;
@@ -1238,21 +1275,23 @@ extension _Editors on _HomeState {
         'unit': 'mL',
         'values': {'value': volume},
         'at': at.toUtc().toIso8601String(),
-        'created': at.toUtc().toIso8601String(),
+        'created': stamp.toUtc().toIso8601String(),
         'zone': at.timeZoneName,
+        if (occurrence != null) 'reminderOccurrence': occurrence,
         if (linked != null)
           'conditions': [
             {'id': linked['id'], 'name': conditionName(linked, ar)},
           ],
       });
       rememberTracker(d, 'water');
+      added = true;
     });
     if (!mounted) return;
     _redraw(() {
       _addingWater = false;
       now = DateTime.now();
     });
-    if (ok) {
+    if (ok && added) {
       unawaited(HapticFeedback.lightImpact());
       _toast(
         t('اتسجل كوب مياه', 'Cup logged'),
@@ -1260,6 +1299,13 @@ extension _Editors on _HomeState {
         action: SnackBarAction(
           label: t('تراجع', 'Undo'),
           onPressed: () => save((d) => removeRow(d, 'entries', id)),
+        ),
+      );
+    } else if (ok) {
+      _toast(
+        t(
+          'الكوب متسجّل للميعاد ده بالفعل',
+          'Water was already logged for this reminder',
         ),
       );
     }

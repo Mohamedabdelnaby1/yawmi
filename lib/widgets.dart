@@ -571,19 +571,22 @@ class WidgetScene {
   ({String label, String route, int minute})? _upcoming() {
     if (config['showUpcoming'] == false) return null;
     final preferred = cardPlan(state, config).toSet();
-    final schedules = trackingSchedules(state, ar)
+    final allSchedules = trackingSchedules(state, ar);
+    final schedules = allSchedules
         .where(
           (row) =>
               preferred.contains(row['tracker']) && reveals(row['tracker']),
         )
         .toList();
     final today = dayKey(now);
-    final resolved = rows(
-      state['entries'],
-    ).map((row) => row['reminderOccurrence']).toSet();
     final matches = <(DateTime, String, String)>[];
     for (final offset in [0, 1]) {
       final day = DateTime(now.year, now.month, now.day + offset);
+      final resolved = trackingReminderMatches(
+        state,
+        day,
+        schedules: allSchedules,
+      );
       if (preferred.contains(medicineCard) && reveals(medicineCard)) {
         for (final dose in outstanding(_cardState(medicineCard), day)) {
           if (!dose.time.isBefore(now)) {
@@ -598,7 +601,7 @@ class WidgetScene {
       for (final rule in schedules) {
         final date = dayKey(day);
         final at = reminderTimeOn(rule, day);
-        if (!resolved.contains("${rule['id']}:$date") &&
+        if (!resolved.containsKey(reminderOccurrence(rule['id'], day)) &&
             at != null &&
             !at.isBefore(now)) {
           matches.add((

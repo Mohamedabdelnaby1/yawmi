@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:yawmi/design.dart';
 import 'package:yawmi/domain.dart';
 import 'package:yawmi/main.dart';
+import 'package:yawmi/reminder_schedule.dart';
 import 'package:yawmi/transfer.dart';
 
 import 'yawmi_test.dart' show MemoryJournal, reading;
@@ -332,6 +333,167 @@ void main() {
     );
     expect(journalAgenda(journal.state, today), isEmpty);
   });
+
+  test('A reading ten minutes early closes only the nearest matching slot', () {
+    final morning = DateTime(2026, 11, 23, 8);
+    final state = freshState()
+      ..['reminders'] = [
+        {
+          'id': 'sugar',
+          'name': 'Glucose',
+          'tracker': 'glucose',
+          'enabled': true,
+          'days': allDays,
+          'times': [480, 500],
+          'minute': 480,
+        },
+        {
+          'id': 'pressure',
+          'name': 'Pressure',
+          'tracker': 'pressure',
+          'enabled': true,
+          'days': allDays,
+          'minute': 480,
+        },
+      ]
+      ..['entries'] = [
+        reading(
+          'early',
+          'glucose',
+          morning.subtract(const Duration(minutes: 10)),
+          119,
+          'mg/dL',
+        ),
+        reading(
+          'old',
+          'glucose',
+          morning.subtract(const Duration(hours: 1)),
+          115,
+          'mg/dL',
+        ),
+        reading('undated', 'pressure', morning, 120, 'mmHg')
+          ..['legacyUndated'] = true,
+      ];
+    final first = reminderOccurrence('sugar@480', morning);
+    final second = reminderOccurrence('sugar@500', morning);
+    expect(trackingReminderMatches(state, morning), {first: 'early'});
+    expect(journalAgenda(state, morning).map((item) => item.row!['id']), [
+      'pressure',
+      'sugar@500',
+    ]);
+    state['entries'] = [
+      for (final entry in rows(state['entries']))
+        if (entry['id'] == 'early')
+          {...entry, 'reminderOccurrence': second}
+        else
+          entry,
+    ];
+    expect(trackingReminderMatches(state, morning), {second: 'early'});
+    state['entries'] = rows(
+      state['entries'],
+    ).where((e) => e['id'] != 'early').toList();
+    expect(trackingReminderMatches(state, morning), isEmpty);
+  });
+
+  testWidgets('An overdue reminder can link a reading saved earlier that day', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(432, 960);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final now = DateTime.now();
+    final minute = now.hour * 60 + now.minute;
+    final due = minute > 65 ? 0 : 180;
+    final journal = MemoryJournal(
+      freshState()
+        ..['stage'] = 3
+        ..['language'] = 'en'
+        ..['enabled'] = ['glucose']
+        ..['entries'] = [reading('old', 'glucose', now, 134, 'mg/dL')]
+        ..['reminders'] = [
+          {
+            'id': 'glucose-reminder',
+            'name': 'Glucose reminder',
+            'tracker': 'glucose',
+            'start': dayKey(now),
+            'days': allDays,
+            'minute': due,
+            'enabled': true,
+          },
+        ],
+    );
+    await tester.pumpWidget(Yawmi(journal));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('agenda-focus-reminder')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Already logged'));
+    await tester.pumpAndSettle();
+    expect(find.text('Choose an existing entry'), findsOneWidget);
+    final option = find.descendant(
+      of: find.byType(BottomSheet).last,
+      matching: find.byWidgetPredicate(
+        (widget) => widget is ControlCard && widget.title.contains('134'),
+      ),
+    );
+    await tester.tap(option);
+    await tester.pumpAndSettle();
+    final entries = entriesFor(journal.state, 'glucose');
+    expect(entries, hasLength(1));
+    expect(
+      entryReminderOccurrence(entries.single),
+      reminderOccurrence('glucose-reminder', now),
+    );
+    expect(journalAgenda(journal.state, now), isEmpty);
+  });
+
+  testWidgets(
+    'A water reminder opens personalized cups and links the confirmed size',
+    (tester) async {
+      tester.view.physicalSize = const Size(400, 850);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final now = DateTime.now();
+      final journal = MemoryJournal(
+        freshState()
+          ..['stage'] = 3
+          ..['language'] = 'en'
+          ..['enabled'] = ['water']
+          ..['waterCups'] = [120, 350, 600]
+          ..['reminders'] = [
+            {
+              'id': 'water',
+              'name': 'Water reminder',
+              'tracker': 'water',
+              'start': dayKey(now),
+              'days': allDays,
+              'minute': 0,
+              'enabled': true,
+            },
+          ],
+      );
+      await tester.pumpWidget(Yawmi(journal));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('agenda-focus-reminder')));
+      await tester.pumpAndSettle();
+      expect(find.text('Choose your cup size'), findsOneWidget);
+      expect(find.text('Other amount'), findsOneWidget);
+      await tester.tap(find.text('600'));
+      await tester.pumpAndSettle();
+      expect(entriesFor(journal.state, 'water'), isEmpty);
+      await tester.tap(find.text('Log water'));
+      await tester.pumpAndSettle();
+      final entry = entriesFor(journal.state, 'water').single;
+      expect(entry['values']['value'], 600);
+      expect(entryReminderOccurrence(entry), reminderOccurrence('water', now));
+      expect(journalAgenda(journal.state, now), isEmpty);
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+      expect(entriesFor(journal.state, 'water'), isEmpty);
+      expect(journalAgenda(journal.state, now), hasLength(1));
+    },
+  );
 
   testWidgets('Weekly review opens a visit report with the same entry scope', (
     tester,

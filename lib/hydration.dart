@@ -132,6 +132,71 @@ extension _Hydration on _HomeState {
     child: _Vessel(level: _waterLevel(amount), volume: amount),
   );
 
+  Future<void> _waterReminderCups(DateTime due, String occurrence) async {
+    final water = trackerFor(data, 'water')!;
+    var selected = defaultWaterCup(data);
+    final options = _unusedReminderEntries(data, water, due, occurrence);
+    final choice = await _sheet<({int? volume})>(
+      (_) => StatefulBuilder(
+        builder: (c, redraw) => _JournalPanel(
+          heading: AppBar(
+            title: Text(t('اختار حجم الكوب', 'Choose your cup size')),
+            leading: const CloseButton(),
+          ),
+          body: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+            children: [
+              Text(
+                t(
+                  'ميعاد الميّه · ${prettyDate(due, 'd MMM · HH:mm')}',
+                  'Water reminder · ${prettyDate(due, 'd MMM · HH:mm')}',
+                ),
+              ),
+              const SizedBox(height: 12),
+              _cupPresets(selected, (size) => redraw(() => selected = size)),
+              const SizedBox(height: 8),
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: TextButton.icon(
+                  onPressed: () => Navigator.pop(c, (volume: null)),
+                  icon: const Icon(Icons.edit_outlined),
+                  label: Text(t('كمية تانية', 'Other amount')),
+                ),
+              ),
+              if (options.isNotEmpty)
+                Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: OutlinedButton.icon(
+                    onPressed: () async {
+                      final linked = await _linkSavedReminder(
+                        water,
+                        due,
+                        occurrence,
+                      );
+                      if (linked && c.mounted) Navigator.pop(c);
+                    },
+                    icon: const Icon(Icons.check_circle_outline),
+                    label: Text(t('سجّلته بالفعل', 'Already logged')),
+                  ),
+                ),
+            ],
+          ),
+          footer: _pourButton(
+            selected,
+            () => Navigator.pop(c, (volume: selected)),
+          ),
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+    if (choice.volume case final int amount) {
+      await _addWater(amount, reminderAt: due, occurrence: occurrence);
+    } else {
+      await _entry(water, initialDay: due, occurrence: occurrence);
+    }
+  }
+
   Future<void> _hydrationDetails() async {
     var selected = defaultWaterCup(data);
     await _page<void>(

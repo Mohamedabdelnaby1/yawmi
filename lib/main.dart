@@ -22,6 +22,9 @@ import 'store.dart';
 import 'transfer.dart';
 import 'widgets.dart';
 
+export 'reminder_schedule.dart'
+    show entryReminderOccurrence, reminderOccurrence;
+
 part 'screens.dart';
 part 'editors.dart';
 part 'studio.dart';
@@ -257,6 +260,7 @@ class _HomeState extends State<_Home> with WidgetsBindingObserver {
       final journals = widget.db is ProfileJournal
           ? (widget.db as ProfileJournal).journals.toList()
           : [(ProfileJournal.personal, data)];
+      final today = DateTime.now();
       try {
         final result = await platform.invokeMapMethod<String, bool>(
           'reconcile',
@@ -271,10 +275,11 @@ class _HomeState extends State<_Home> with WidgetsBindingObserver {
                   dose['id'],
                   if (dose['legacyDue'] is String) dose['legacyDue'],
                 ],
-                ...rows(state['entries'])
-                    .map(entryReminderOccurrence)
-                    .whereType<String>()
-                    .map((id) => profileRuleId(id, owner)),
+                for (final day in [shiftCalendarDate(today, -1), today])
+                  ...trackingReminderMatches(
+                    state,
+                    day,
+                  ).keys.map((id) => profileRuleId(id, owner)),
               ],
             ]),
             'lang': ar ? 'ar' : 'en',
@@ -420,7 +425,7 @@ class _HomeState extends State<_Home> with WidgetsBindingObserver {
           await _addWater(defaultWaterCup(data));
         case ['cup', final condition]:
           setState(() => tab = 0);
-          await _addWater(defaultWaterCup(data), condition);
+          await _addWater(defaultWaterCup(data), condition: condition);
         case ['studio']:
           await _openStudio();
         case ['studio', final id] when int.tryParse(id) != null:
@@ -449,27 +454,9 @@ class _HomeState extends State<_Home> with WidgetsBindingObserver {
           setState(() => tab = 2);
           await _openFollowUp(id);
         case ['reminder', final id, final day]:
-          final rule = trackingSchedules(
-            data,
-            ar,
-          ).where((r) => r['id'] == id).firstOrNull;
-          final date = DateTime.tryParse(day);
-          final trackerId = rule?['tracker'];
-          final tracker = trackerId is String
-              ? trackerFor(data, trackerId)
-              : null;
-          if (rule != null &&
-              date != null &&
-              !date.isAfter(DateTime.now()) &&
-              tracker != null &&
-              reminderTimeOn(rule, date) != null) {
-            final key = reminderOccurrence(id, date);
-            if (!rows(
-              data['entries'],
-            ).any((row) => entryReminderOccurrence(row) == key)) {
-              await _entry(tracker, initialDay: date, occurrence: key);
-            }
-          }
+          await _openTrackedReminder(id, day);
+        case ['reminder', final id, final day, 'logged']:
+          await _openTrackedReminder(id, day, alreadyLogged: true);
         case ['tracker', final id]:
           final tracker = trackerFor(data, id);
           if (id == 'water') {

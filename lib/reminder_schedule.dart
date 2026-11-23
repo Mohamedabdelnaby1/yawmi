@@ -7,6 +7,100 @@ const repeatIntervals = [10, 15, 20, 30, 45, 60];
 const waterIntervals = [30, 45, 60, 90, 120, 150, 180, 240];
 const firstWaterDelays = [0, 15, 30, 60];
 const routineModes = ['work', 'dayOff', 'travel'];
+const plannedTrackers = {'visit', 'lab', 'refill'};
+const reminderMatchWindow = Duration(minutes: 30);
+
+bool isPlannedEntry(JournalRow row) {
+  if (!plannedTrackers.contains(row['tracker'])) return false;
+  if (row['planned'] is bool) return row['planned'] == true;
+  final created = DateTime.tryParse(row['created'] as String? ?? '');
+  return created != null && eventTime(row).isAfter(created);
+}
+
+String reminderOccurrence(String id, DateTime day) => '$id:${dayKey(day)}';
+
+String? entryReminderOccurrence(JournalRow row) =>
+    row['reminderOccurrence'] is String
+    ? row['reminderOccurrence'] as String
+    : null;
+
+bool canCompleteTrackingReminder(JournalRow entry, DateTime day) =>
+    entry['id'] is String &&
+    entry['legacyUndated'] != true &&
+    !isPlannedEntry(entry) &&
+    (entry['at'] is String && DateTime.tryParse(entry['at']) != null) &&
+    dayKey(eventTime(entry)) == dayKey(day);
+
+/// Resolve each occurrence with one real entry. Explicit links get first
+/// choice, then nearby readings are matched closest-first within the same day.
+Map<String, String> trackingReminderMatches(
+  JournalRow state,
+  DateTime day, {
+  Iterable<JournalRow>? schedules,
+}) {
+  final slots = <String, ({String tracker, DateTime at})>{
+    for (final rule in schedules ?? trackingSchedules(state, false))
+      if (rule['tracker'] case final String tracker)
+        if (reminderTimeOn(rule, day) case final at?)
+          reminderOccurrence(rule['id'], day): (tracker: tracker, at: at),
+  };
+  if (slots.isEmpty) return {};
+
+  final entries = rows(
+    state['entries'],
+  ).where((entry) => canCompleteTrackingReminder(entry, day)).toList();
+  final completed = <String, String>{};
+  final used = <String>{};
+  for (final entry in entries) {
+    final key = entryReminderOccurrence(entry);
+    if (key == null ||
+        slots[key]?.tracker != entry['tracker'] ||
+        completed.containsKey(key))
+      continue;
+    completed[key] = entry['id'];
+    used.add(entry['id']);
+  }
+
+  final candidates =
+      <
+        ({String key, String id, Duration gap, DateTime due, DateTime entryAt})
+      >[];
+  for (final entry in entries) {
+    if (used.contains(entry['id'])) continue;
+    final at = eventTime(entry);
+    for (final slot in slots.entries) {
+      if (completed.containsKey(slot.key) ||
+          slot.value.tracker != entry['tracker'])
+        continue;
+      final gap = at.difference(slot.value.at).abs();
+      if (gap <= reminderMatchWindow) {
+        candidates.add((
+          key: slot.key,
+          id: entry['id'],
+          gap: gap,
+          due: slot.value.at,
+          entryAt: at,
+        ));
+      }
+    }
+  }
+  candidates.sort((a, b) {
+    final gap = a.gap.compareTo(b.gap);
+    if (gap != 0) return gap;
+    final time = a.due.compareTo(b.due);
+    if (time != 0) return time;
+    final entryOrder = a.entryAt.compareTo(b.entryAt);
+    if (entryOrder != 0) return entryOrder;
+    final ruleOrder = a.key.compareTo(b.key);
+    return ruleOrder != 0 ? ruleOrder : a.id.compareTo(b.id);
+  });
+  for (final candidate in candidates) {
+    if (!completed.containsKey(candidate.key) && used.add(candidate.id)) {
+      completed[candidate.key] = candidate.id;
+    }
+  }
+  return completed;
+}
 
 typedef ReminderRepeat = ({int count, int minutes});
 typedef WaterSlot = ({int minute, int shift, int untilSleep});

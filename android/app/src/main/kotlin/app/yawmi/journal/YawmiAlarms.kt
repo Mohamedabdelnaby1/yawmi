@@ -508,6 +508,12 @@ internal object YawmiAlarms {
             val notice = kind.notification(context, if (next.occurrence.silent) "quiet" else channel, ar, copy, next.original)
                 .setContentIntent(open)
                 .addAction(Notification.Action.Builder(null, action, open).build())
+            if (route.startsWith("reminder/")) {
+                notice.addAction(Notification.Action.Builder(
+                    null, if (ar) "سجّلته بالفعل" else "Already logged",
+                    appShortcut(context, "$scopedRoute/logged", "already-logged-$tag")
+                ).build())
+            }
             if (channel == "medicine" && activeMedicineRule(rules, key) != null) {
                 notice.addAction(Notification.Action.Builder(
                     null, if (ar) "أجّل ١٠ دقايق" else "Snooze 10 min", noticeAction(context, SNOOZE_ACTION, ruleId, key)

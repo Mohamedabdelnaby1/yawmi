@@ -19,22 +19,6 @@ class AgendaItem {
   final JournalRow? row;
 }
 
-const plannedTrackers = {'visit', 'lab', 'refill'};
-
-bool isPlannedEntry(JournalRow row) {
-  if (!plannedTrackers.contains(row['tracker'])) return false;
-  if (row['planned'] is bool) return row['planned'] == true;
-  final created = DateTime.tryParse(row['created'] as String? ?? '');
-  return created != null && eventTime(row).isAfter(created);
-}
-
-String reminderOccurrence(String id, DateTime day) => '$id:${dayKey(day)}';
-
-String? entryReminderOccurrence(JournalRow row) =>
-    row['reminderOccurrence'] is String
-    ? row['reminderOccurrence'] as String
-    : null;
-
 List<AgendaItem> journalAgenda(
   JournalRow state,
   DateTime from, {
@@ -43,14 +27,11 @@ List<AgendaItem> journalAgenda(
   final start = DateUtils.dateOnly(from);
   final end = DateTime(start.year, start.month, start.day + days);
   final entries = (state['entries'] as List? ?? []).cast<JournalRow>();
-  final completed = entries
-      .map(entryReminderOccurrence)
-      .whereType<String>()
-      .toSet();
   final reminders = trackingSchedules(state, false);
   final result = <AgendaItem>[];
   for (var i = 0; i < days; i++) {
     final day = DateTime(start.year, start.month, start.day + i);
+    final completed = trackingReminderMatches(state, day, schedules: reminders);
     for (final dose in outstanding(state, day)) {
       result.add(
         AgendaItem(
@@ -67,7 +48,7 @@ List<AgendaItem> journalAgenda(
       if (at != null &&
           (rule['waterPlan'] != true ||
               from.isBefore(at.add(Duration(minutes: rule['maxDelay'])))) &&
-          !completed.contains(reminderOccurrence(rule['id'], day))) {
+          !completed.containsKey(reminderOccurrence(rule['id'], day))) {
         result.add(
           AgendaItem(
             AgendaKind.reminder,
@@ -209,6 +190,130 @@ extension _Daily on _HomeState {
         item.kind == AgendaKind.followUp || item.kind == AgendaKind.appointment,
   );
 
+  Future<void> _openTrackedReminder(
+    String id,
+    String date, {
+    bool alreadyLogged = false,
+  }) async {
+    final day = parseCalendarDate(date);
+    if (day == null || day.isAfter(DateTime.now())) return;
+    final schedules = trackingSchedules(data, ar);
+    final rule = schedules.where((row) => row['id'] == id).firstOrNull;
+    final trackerId = rule?['tracker'];
+    if (rule == null || trackerId is! String) return;
+    final tracker = trackerFor(data, trackerId);
+    final due = reminderTimeOn(rule, day);
+    if (tracker == null || due == null) return;
+    final occurrence = reminderOccurrence(id, day);
+    if (trackingReminderMatches(
+      data,
+      day,
+      schedules: schedules,
+    ).containsKey(occurrence)) {
+      _toast(
+        t(
+          'التسجيل متسجّل للميعاد ده بالفعل',
+          'This reminder already has an entry',
+        ),
+      );
+      return;
+    }
+    if (alreadyLogged) {
+      if (!await _linkSavedReminder(tracker, due, occurrence) &&
+          mounted &&
+          _unusedReminderEntries(data, tracker, due, occurrence).isEmpty) {
+        _toast(
+          t(
+            'لسه مفيش تسجيل متاح في اليوم ده',
+            'No available entry for this day',
+          ),
+        );
+      }
+    } else if (tracker.id == 'water') {
+      await _waterReminderCups(due, occurrence);
+    } else {
+      await _entry(tracker, initialDay: due, occurrence: occurrence);
+    }
+  }
+
+  List<JournalRow> _unusedReminderEntries(
+    JournalRow state,
+    Tracker tracker,
+    DateTime day,
+    String occurrence,
+  ) {
+    final matches = trackingReminderMatches(state, day);
+    if (matches.containsKey(occurrence)) return [];
+    final used = matches.values.toSet();
+    return rows(state['entries'])
+        .where(
+          (entry) =>
+              entry['tracker'] == tracker.id &&
+              canCompleteTrackingReminder(entry, day) &&
+              !eventTime(entry).isAfter(DateTime.now()) &&
+              !used.contains(entry['id']),
+        )
+        .toList()
+      ..sort((a, b) => eventTime(b).compareTo(eventTime(a)));
+  }
+
+  Future<bool> _linkSavedReminder(
+    Tracker tracker,
+    DateTime day,
+    String occurrence,
+  ) async {
+    final options = _unusedReminderEntries(data, tracker, day, occurrence);
+    if (options.isEmpty) return false;
+    final selected = await _sheet<String>(
+      (c) => _JournalPanel(
+        heightFactor: .62,
+        heading: AppBar(
+          title: Text(t('اختار تسجيل موجود', 'Choose an existing entry')),
+          leading: const CloseButton(),
+        ),
+        body: ListView.separated(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
+          itemCount: options.length,
+          separatorBuilder: (_, index) => const SizedBox(height: 8),
+          itemBuilder: (c, index) {
+            final entry = options[index];
+            return ControlCard(
+              title: reportValue(entry, ar),
+              subtitle: prettyDate(eventTime(entry), 'd MMM · HH:mm'),
+              icon: glyph(tracker.id),
+              onTap: () => Navigator.pop(c, entry['id'] as String),
+            );
+          },
+        ),
+      ),
+    );
+    if (selected == null || !mounted) return false;
+    var linked = false;
+    final saved = await save((draft) {
+      final entry = _unusedReminderEntries(
+        draft,
+        tracker,
+        day,
+        occurrence,
+      ).where((row) => row['id'] == selected).firstOrNull;
+      if (entry == null) return;
+      upsert(draft, 'entries', {...entry, 'reminderOccurrence': occurrence});
+      linked = true;
+    });
+    if (!mounted || !saved) return false;
+    _toast(
+      linked
+          ? t('اتربط التسجيل بالميعاد', 'Entry linked to this reminder')
+          : t(
+              'التسجيل ده مبقاش متاح للربط',
+              'That entry is no longer available',
+            ),
+      sealed: linked,
+    );
+    return linked;
+  }
+
   Future<void> _openAgendaItem(AgendaItem item) async {
     final today = dayKey(item.at) == dayKey(DateTime.now());
     switch (item.kind) {
@@ -221,11 +326,7 @@ extension _Daily on _HomeState {
       case AgendaKind.reminder:
         final tracker = trackerFor(data, item.tracker);
         if (today && tracker != null) {
-          await _entry(
-            tracker,
-            initialDay: item.at,
-            occurrence: reminderOccurrence(item.row!['id'], item.at),
-          );
+          await _openTrackedReminder(item.row!['id'], dayKey(item.at));
         } else if (item.row?['waterPlan'] == true) {
           await _waterReminder();
         } else {
