@@ -45,6 +45,68 @@ class _QuietBand extends CustomPainter {
       old.start != start || old.end != end || old.progress != progress;
 }
 
+JournalRow _notice(
+  String kind, {
+  Object? subject,
+  List<String?> details = const [],
+  DateTime? date,
+}) => {
+  'kind': kind,
+  if (subject is String && subject.trim().isNotEmpty) 'subject': subject.trim(),
+  if (details.any((line) => line?.trim().isNotEmpty == true))
+    'details': details
+        .whereType<String>()
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .toSet()
+        .toList(),
+  if (date != null) 'date': dayKey(date),
+};
+
+JournalRow _medicineNotice(JournalRow med, int? minute, bool ar) {
+  final slots = med['mealSlots'] as Map?;
+  return _notice(
+    'medicine',
+    subject: med['name'],
+    details: [
+      med['amount'] as String?,
+      med['strength'] as String?,
+      if (minute != null) doseMealLabel(slots?['$minute'], ar),
+    ],
+  );
+}
+
+JournalRow _trackingNotice(JournalRow state, JournalRow reminder, bool ar) {
+  final id = reminder['tracker'];
+  final tracker = id is String ? trackerFor(state, id) : null;
+  final kind = switch (id) {
+    'glucose' || 'pressure' || 'water' || 'sleep' => id as String,
+    'lab' || 'visit' => id as String,
+    _ => tracker?.kind == 'number' ? 'measurement' : 'tracking',
+  };
+  final name = reminder['name'] as String? ?? '';
+  final showName =
+      name.trim().isNotEmpty &&
+      name != tracker?.name(ar) &&
+      reminder['waterPlan'] != true;
+  return _notice(
+    kind,
+    subject: showName
+        ? name
+        : kind == 'measurement' || kind == 'tracking'
+        ? tracker?.name(ar)
+        : null,
+    details: [
+      if (reminder['waterPlan'] == true)
+        tr(
+          ar,
+          'كوبك المعتاد ${defaultWaterCup(state)} مل',
+          'Usual cup: ${defaultWaterCup(state)} mL',
+        ),
+    ],
+  );
+}
+
 List<JournalRow> notificationRules(
   JournalRow state,
   bool ar, {
@@ -52,6 +114,10 @@ List<JournalRow> notificationRules(
 }) {
   final doses = (state['doses'] as List? ?? []).cast<JournalRow>();
   final meds = rows(state['meds']);
+  final byId = {for (final med in meds) med['id']: med};
+  final visitFollowUps = rows(
+    state['visits'],
+  ).map((row) => row['followUp']).whereType<String>().toSet();
   final now = clock ?? DateTime.now();
   final rules = <JournalRow>[
     for (final med in rows(
@@ -68,7 +134,7 @@ List<JournalRow> notificationRules(
           'medicine': med['id'],
           'revision': med['revision'],
           'type': 'medicine',
-          'title': tr(ar, 'موعد دواء في يومي', 'Medication reminder'),
+          'notice': _medicineNotice(med, minute, ar),
           'maxDelay': minutesUntilNextSlot(ints(med['times']), minute),
           if (med['repeat'] != null) 'repeat': med['repeat'],
         },
@@ -90,9 +156,7 @@ List<JournalRow> notificationRules(
         'type': r['tracker'] == 'water' || r['tracker'] == 'sleep'
             ? 'habit'
             : 'tracking',
-        'title': r['waterPlan'] == true
-            ? tr(ar, 'وقت شرب المياه', 'Time for a drink of water')
-            : tr(ar, 'تذكير من يومي', 'Yawmi reminder'),
+        'notice': _trackingNotice(state, r, ar),
         'route': r['tracker'] == null
             ? 'routine'
             : 'add/${r['tracker'] as String}',
@@ -105,11 +169,7 @@ List<JournalRow> notificationRules(
         ...dateAlertRules(
           expiry,
           id: "expiry:${med['id']}",
-          title: tr(
-            ar,
-            'راجع صلاحية دوائك في يومي',
-            'Check medication expiry in Yawmi',
-          ),
+          notice: _notice('expiry', subject: med['name'], date: expiry.date),
           route: "expiry/${med['id']}",
           now: now,
         ),
@@ -119,10 +179,11 @@ List<JournalRow> notificationRules(
             ...dateAlertRules(
               expiry,
               id: "expiry:${med['id']}:${pack['id']}",
-              title: tr(
-                ar,
-                'راجع صلاحية عبوة دواء في يومي',
-                'Check a package expiry in Yawmi',
+              notice: _notice(
+                'expiry',
+                subject: med['name'],
+                date: expiry.date,
+                details: [pack['name'] as String?],
               ),
               route: "packs/${med['id']}",
               now: now,
@@ -133,30 +194,38 @@ List<JournalRow> notificationRules(
         ...dateAlertRules(
           alert,
           id: "follow-up:${followUp['id']}",
-          title: tr(ar, 'موعد متابعة في يومي', 'Yawmi follow-up reminder'),
+          notice: _notice(
+            switch (followUp['tracker']) {
+              'lab' => 'lab',
+              'visit' => 'visit',
+              _ =>
+                visitFollowUps.contains(followUp['id']) ? 'visit' : 'followUp',
+            },
+            subject: followUp['name'],
+            date: alert.date,
+          ),
           route: "follow-up/${followUp['id']}",
           now: now,
         ),
     for (final e in rows(state['snoozes']))
-      if (DateTime.parse(
-            e['when'],
-          ).isAfter(DateTime.now().subtract(const Duration(days: 1))) &&
-          doseEvent(state, e['id']) == null &&
-          rows(state['meds']).any(
-            (m) =>
-                m['id'] == e['medicine'] &&
-                m['revision'] == e['revision'] &&
-                m['archived'] != true &&
-                m['notify'] == true,
-          ))
+      if (byId[e['medicine']] case final med?
+          when med['revision'] == e['revision'] &&
+              med['archived'] != true &&
+              med['notify'] == true &&
+              DateTime.parse(
+                e['when'],
+              ).isAfter(now.subtract(const Duration(days: 1))) &&
+              doseEvent(state, e['id']) == null)
         {
           ...e,
           'id': 'snooze:${e['id'] as String}',
           'type': 'medicine',
-          'title': tr(ar, 'تذكير بجرعة في يومي', 'Yawmi dose reminder'),
-          'repeat': meds
-              .where((med) => med['id'] == e['medicine'])
-              .firstOrNull?['repeat'],
+          'notice': _medicineNotice(
+            med,
+            int.tryParse((e['id'] as String).split(':').last),
+            ar,
+          ),
+          'repeat': med['repeat'],
         },
   ];
   final quiet = state['quiet'] as Map? ?? {};
@@ -195,11 +264,7 @@ Iterable<JournalRow> _stockReminderRules(
         'when': at.toUtc().toIso8601String(),
         'graceMinutes': 900,
         'route': 'stock/${med['id']}',
-        'title': tr(
-          ar,
-          'راجع موعد نفاد مخزون الدوا',
-          'Review estimated medication runout',
-        ),
+        'notice': _notice('forecast', subject: med['name'], date: date),
       };
     }
   }
@@ -213,7 +278,17 @@ Iterable<JournalRow> _stockReminderRules(
   final base = {
     'type': 'tracking',
     'graceMinutes': 360,
-    'title': tr(ar, 'مخزون دواء قرب يخلص', 'Medication stock is running low'),
+    'notice': _notice(
+      'stock',
+      subject: med['name'],
+      details: [
+        tr(
+          ar,
+          'الكمية المسجّلة ${_stockQuantity(balance.remaining)}',
+          'Recorded stock: ${_stockQuantity(balance.remaining)}',
+        ),
+      ],
+    ),
     'route': "stock/${med['id']}",
     'repeat': {'count': 0},
   };
@@ -612,12 +687,12 @@ extension _Routine on _HomeState {
   }
 
   Future<void> _notificationDiagnostics() async {
-    var channel = 'tracking';
+    var kind = 'measurement';
     Future<JournalRow?> status({bool test = false, bool locked = false}) async {
       try {
         return await platform.invokeMapMethod<String, dynamic>(
           test ? 'testNotification' : 'notificationDiagnostics',
-          test ? {'arabic': ar, 'channel': channel, 'locked': locked} : null,
+          test ? {'arabic': ar, 'kind': kind, 'locked': locked} : null,
         );
       } catch (_) {
         return null;
@@ -749,17 +824,62 @@ extension _Routine on _HomeState {
                   Wrap(
                     spacing: 7,
                     children: [
-                      for (final (id, name) in [
-                        ('medicine', t('الأدوية', 'Medication')),
-                        ('tracking', t('القياسات', 'Measurements')),
-                        ('habit', t('المياه والعادات', 'Water and habits')),
+                      for (final (id, name, icon) in [
+                        (
+                          'medicine',
+                          t('دوا', 'Medication'),
+                          Icons.medication_outlined,
+                        ),
+                        (
+                          'glucose',
+                          t('سكر', 'Glucose'),
+                          Icons.bloodtype_outlined,
+                        ),
+                        (
+                          'pressure',
+                          t('ضغط', 'Pressure'),
+                          Icons.monitor_heart_outlined,
+                        ),
+                        (
+                          'measurement',
+                          t('قياس', 'Measurement'),
+                          Icons.show_chart_rounded,
+                        ),
+                        (
+                          'water',
+                          t('ميّه', 'Water'),
+                          Icons.water_drop_outlined,
+                        ),
+                        ('sleep', t('نوم', 'Sleep'), Icons.bedtime_outlined),
+                        (
+                          'stock',
+                          t('مخزون', 'Stock'),
+                          Icons.inventory_2_outlined,
+                        ),
+                        (
+                          'expiry',
+                          t('صلاحية', 'Expiry'),
+                          Icons.hourglass_bottom_rounded,
+                        ),
+                        ('lab', t('تحليل', 'Lab'), Icons.science_outlined),
+                        (
+                          'visit',
+                          t('زيارة', 'Visit'),
+                          Icons.event_available_outlined,
+                        ),
+                        (
+                          'followUp',
+                          t('متابعة', 'Follow-up'),
+                          Icons.event_repeat_rounded,
+                        ),
                       ])
                         ChoiceChip(
+                          avatar: Icon(icon, size: 17),
                           label: Text(name),
-                          selected: id == channel,
+                          selected: id == kind,
                           onSelected: busy
                               ? null
-                              : (_) => redraw(() => channel = id),
+                              : (_) => redraw(() => kind = id),
                         ),
                     ],
                   ),

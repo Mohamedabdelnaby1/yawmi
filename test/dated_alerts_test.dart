@@ -16,6 +16,110 @@ const _alert = {
 };
 
 void main() {
+  test(
+    'Notification details match the scheduled category in Arabic and English',
+    () {
+      final now = DateTime(2026, 12, 24, 8);
+      final state = freshState()
+        ..['meds'] = [
+          {
+            'id': 'rx',
+            'name': 'Sample medicine',
+            'amount': '1 tablet',
+            'strength': '10 mg',
+            'notify': true,
+            'times': [480],
+            'days': allDays,
+            'revision': 1,
+            'start': '2026-12-24',
+            'expiry': _alert,
+            'mealSlots': {
+              '480': {'meal': 'breakfast', 'relation': 'after'},
+            },
+          },
+        ]
+        ..['snoozes'] = [
+          {
+            'id': 'rx:1:2026-12-24:480',
+            'medicine': 'rx',
+            'revision': 1,
+            'when': now
+                .add(const Duration(minutes: 10))
+                .toUtc()
+                .toIso8601String(),
+          },
+        ]
+        ..['reminders'] = [
+          {
+            'id': 'bp',
+            'name': 'Evening pressure',
+            'tracker': 'pressure',
+            'minute': 1080,
+            'days': allDays,
+            'enabled': true,
+          },
+          {
+            'id': 'reading',
+            'name': 'سكر صايم',
+            'tracker': 'glucose',
+            'minute': 485,
+            'days': allDays,
+            'enabled': true,
+          },
+        ]
+        ..['waterReminder'] = {
+          'enabled': true,
+          'wake': 480,
+          'sleep': 540,
+          'interval': 60,
+          'first': 0,
+          'days': allDays,
+        }
+        ..['followUps'] = [
+          {
+            'id': 'lab',
+            'name': 'Lab recheck',
+            'tracker': 'lab',
+            'alert': _alert,
+          },
+          {'id': 'review', 'name': 'Scheduled visit', 'alert': _alert},
+        ]
+        ..['visits'] = [
+          {'id': 'visit', 'followUp': 'review'},
+        ];
+
+      final en = notificationRules(state, false, clock: now);
+      final ar = notificationRules(state, true, clock: now);
+      Map notice(List<JournalRow> rules, String id) =>
+          rules.firstWhere(
+                (rule) => (rule['id'] as String).startsWith(id),
+              )['notice']
+              as Map;
+
+      expect(notice(en, 'rx:'), {
+        'kind': 'medicine',
+        'subject': 'Sample medicine',
+        'details': ['1 tablet', '10 mg', 'Breakfast · After meal'],
+      });
+      expect(notice(ar, 'snooze:')['details'], [
+        '1 tablet',
+        '10 mg',
+        'الفطار · بعد الوجبة',
+      ]);
+      expect(notice(en, 'bp')['subject'], 'Evening pressure');
+      expect(notice(en, 'bp')['kind'], 'pressure');
+      expect(notice(ar, 'reading')['subject'], 'سكر صايم');
+      expect(notice(ar, 'reading')['kind'], 'glucose');
+      expect(notice(en, 'water-plan')['details'], [
+        'Usual cup: ${defaultWaterCup(state)} mL',
+      ]);
+      expect(notice(en, 'expiry:')['date'], '2027-01-01');
+      expect(notice(en, 'follow-up:lab')['kind'], 'lab');
+      expect(notice(en, 'follow-up:review')['kind'], 'visit');
+      expect(en.map((rule) => rule['id']), ar.map((rule) => rule['id']));
+    },
+  );
+
   test('Expiry and follow-up schedule separate local calendar days', () {
     final state = freshState()
       ..['meds'] = [
@@ -102,6 +206,10 @@ void main() {
         clock: initial.add(const Duration(days: 3)),
       );
       expect(balance.remaining, 2);
+      expect(rules.first['notice'], {
+        'kind': 'stock',
+        'details': ['Recorded stock: 2'],
+      });
       expect(balance.lowSince!.toLocal(), initial.add(const Duration(days: 2)));
       expect(
         rules.first['when'],

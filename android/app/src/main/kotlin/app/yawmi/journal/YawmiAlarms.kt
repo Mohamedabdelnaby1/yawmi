@@ -11,6 +11,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.text.format.DateFormat
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.Instant
@@ -88,6 +89,7 @@ internal object YawmiAlarms {
             merged[id] = JSONObject()
                 .put("id", id).put("when", Instant.ofEpochMilli(due).toString())
                 .put("type", "medicine").put("route", "dose/$key")
+                .put("notice", original.optJSONObject("notice"))
                 .put("owner", original.optString("owner"))
                 .put("quiet", original.optJSONObject("quiet"))
                 .put("repeatCount", original.optInt("repeatCount"))
@@ -318,10 +320,19 @@ internal object YawmiAlarms {
         }
     }
 
-    fun test(context: Context, arabic: Boolean, requested: String?, locked: Boolean): Map<String, Any> {
+    private fun testKind(key: String?, channel: String?): ReminderKind =
+        ReminderKind.fromKey(key.orEmpty())?.takeUnless { it == ReminderKind.UPDATE }
+            ?: when (channel) {
+                "medicine" -> ReminderKind.MEDICINE
+                "habit" -> ReminderKind.WATER
+                else -> ReminderKind.MEASUREMENT
+            }
+
+    fun test(context: Context, arabic: Boolean, requested: String?, locked: Boolean, requestedKind: String?): Map<String, Any> {
         val stored = prefs(context)
         val manager = notifier(context)
-        val channel = requested?.takeIf { it in setOf("medicine", "tracking", "habit") } ?: "tracking"
+        val kind = testKind(requestedKind, requested)
+        val channel = kind.channel
         channelStatus(context)
         val due = System.currentTimeMillis() + if (locked) MINUTE else 10_000L
         val state = when {
@@ -331,6 +342,7 @@ internal object YawmiAlarms {
         }
         stored.edit().putString("testState", state).putBoolean("testArabic", arabic)
             .putString("testChannel", channel)
+            .putString("testKind", kind.key)
             .putLong("testAt", if (state.startsWith("queued")) due else System.currentTimeMillis()).apply()
         recordAudit(context, "test", state, due)
         return diagnostics(context)
@@ -351,16 +363,18 @@ internal object YawmiAlarms {
         if (!state.startsWith("queued") || store.getLong("testAt", 0) != due) return
         val ar = store.getBoolean("testArabic", false)
         val channel = store.getString("testChannel", "tracking") ?: "tracking"
+        val kind = testKind(store.getString("testKind", null), channel)
         val manager = notifier(context)
         channelStatus(context)
         val result = when {
             !allowed(context) -> "blocked"
             manager.getNotificationChannel(channel)?.importance == NotificationManager.IMPORTANCE_NONE -> "channelBlocked"
             else -> try {
-                val notice = Notification.Builder(context, channel).setSmallIcon(R.drawable.ic_reminder)
-                    .setContentTitle(if (ar) "تنبيه تجريبي من يومي" else "Yawmi test notification")
-                    .setContentText(if (ar) "ده اختبار للإشعارات على الجهاز." else "This checks notifications on this device.")
-                    .setVisibility(Notification.VISIBILITY_PRIVATE).setAutoCancel(true)
+                val caption = if (ar) "معاينة شكل التنبيه" else "Notification appearance preview"
+                val notice = kind.notification(
+                    context, channel, ar, ReminderCopy(caption, caption), due,
+                    if (ar) "تجربة · ${kind.title(true)}" else "Test · ${kind.title(false)}",
+                )
                     .setContentIntent(appShortcut(context, "routine", "diagnostic")).build()
                 manager.notify("yawmi-test", 1, notice)
                 "posted"
@@ -471,25 +485,29 @@ internal object YawmiAlarms {
             val ruleId = rule.getString("id")
             val key = next.occurrence.key
             val channel = rule.optString("type", "tracking")
-            val title = rule.optString("title", if (ar) "تذكير من يومي" else "Yawmi reminder")
-            val description = if (now - next.original >= 10 * MINUTE) {
-                if (ar) "الميعاد عدى. افتح يومي وراجع التسجيل." else "The scheduled time passed. Open Yawmi to review."
-            } else if (next.priorCount > 0) {
-                if (ar) "لسه مفيش تسجيل للميعاد ده. افتح يومي تراجعه." else "No entry for this reminder yet. Open Yawmi to review."
-            } else {
-                if (ar) "افتح يومي وشوف تفاصيل الميعاد." else "Open Yawmi to see the reminder."
-            }
+            val kind = ReminderKind.fromRule(rule)
+            val localTime = Instant.ofEpochMilli(next.original).atZone(ZoneId.systemDefault()).toLocalTime()
+            val time = widgetClockText(localTime, if (ar) "ar" else "en",
+                "system", DateFormat.is24HourFormat(context), showPeriod = true)
+            val copy = reminderCopy(kind, rule, ar, time,
+                repeated = next.priorCount > 0, late = now - next.original >= 10 * MINUTE,
+                snoozed = ruleId.startsWith("snooze:"))
             val route = if (!rule.isNull("tracker") && rule.optString("tracker").isNotBlank())
                 "reminder/${rule.optString("origin", ruleId)}/" + key.substringAfterLast(':')
                 else rule.optString("route").ifEmpty { if (channel == "medicine") "dose/$key" else "routine" }
             val owner = rule.optString("owner")
             val scopedRoute = if (owner.isBlank()) route else "profile/$owner/$route"
             val tag = occurrenceTag(ruleId, key)
-            val notice = Notification.Builder(context, if (next.occurrence.silent) "quiet" else channel)
-                .setSmallIcon(R.drawable.ic_reminder)
-                .setContentTitle(title).setContentText(description).setVisibility(Notification.VISIBILITY_PRIVATE)
-                .setShowWhen(true).setWhen(next.original)
-                .setContentIntent(appShortcut(context, scopedRoute, "notification-$tag")).setAutoCancel(true)
+            val open = appShortcut(context, scopedRoute, "notification-$tag")
+            val action = when {
+                route == "routine" -> if (ar) "افتح روتيني" else "Open Routine"
+                kind == ReminderKind.LAB && route.startsWith("reminder/") -> if (ar) "سجّل التحليل" else "Log lab"
+                kind == ReminderKind.VISIT && route.startsWith("reminder/") -> if (ar) "سجّل الزيارة" else "Log visit"
+                else -> kind.action(ar)
+            }
+            val notice = kind.notification(context, if (next.occurrence.silent) "quiet" else channel, ar, copy, next.original)
+                .setContentIntent(open)
+                .addAction(Notification.Action.Builder(null, action, open).build())
             if (channel == "medicine" && activeMedicineRule(rules, key) != null) {
                 notice.addAction(Notification.Action.Builder(
                     null, if (ar) "أجّل ١٠ دقايق" else "Snooze 10 min", noticeAction(context, SNOOZE_ACTION, ruleId, key)

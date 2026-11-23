@@ -292,11 +292,10 @@ internal object YawmiUpdates {
             channel, if (ar) "تحديثات يومي" else "Yawmi updates", NotificationManager.IMPORTANCE_DEFAULT
         ))
         if (manager.getNotificationChannel(channel).importance == NotificationManager.IMPORTANCE_NONE) return
-        manager.notify(UPDATE_NOTICE, Notification.Builder(c, channel)
-            .setSmallIcon(R.drawable.ic_reminder)
-            .setContentTitle(if (ar) "تحديث جديد ليومي" else "A new Yawmi update")
-            .setContentText(if (ar) "الإصدار ${offer.version} جاهز للتنزيل" else "Version ${offer.version} is ready to download")
-            .setAutoCancel(true).setContentIntent(appShortcut(c, "updates", "app-update"))
+        val ready = if (ar) "الإصدار ${offer.version} جاهز للتنزيل" else "Version ${offer.version} is ready to download"
+        manager.notify(UPDATE_NOTICE, ReminderKind.UPDATE.notification(
+            c, channel, ar, ReminderCopy(ready, ready), System.currentTimeMillis(),
+        ).setContentIntent(appShortcut(c, "updates", "app-update"))
             .addAction(Notification.Action.Builder(
                 null, if (ar) "حدّث دلوقتي" else "Update now",
                 appShortcut(c, "updates/download", "download-update")

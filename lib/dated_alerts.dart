@@ -75,7 +75,7 @@ class DateAlert {
 Iterable<JournalRow> dateAlertRules(
   DateAlert alert, {
   required String id,
-  required String title,
+  required JournalRow notice,
   required String route,
   required DateTime now,
 }) sync* {
@@ -93,7 +93,7 @@ Iterable<JournalRow> dateAlertRules(
       'maxDelay': 1440 - alert.minute,
       'effective': alert.armedAt?.toUtc().toIso8601String(),
       'type': 'tracking',
-      'title': title,
+      'notice': notice,
       'route': route,
       'repeat': {'count': alert.repeat.count, 'minutes': alert.repeat.minutes},
     };

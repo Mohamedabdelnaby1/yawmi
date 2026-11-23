@@ -91,7 +91,7 @@ class MainActivity : FlutterActivity() {
                     "notificationDiagnostics" -> result.success(YawmiAlarms.diagnostics(this))
                     "testNotification" -> result.success(YawmiAlarms.test(this,
                         call.argument<Boolean>("arabic") == true, call.argument<String>("channel"),
-                        call.argument<Boolean>("locked") == true))
+                        call.argument<Boolean>("locked") == true, call.argument<String>("kind")))
                     "settings" -> {
                         startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName))
                         result.success(null)
